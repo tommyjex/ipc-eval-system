@@ -1,0 +1,15 @@
+{
+  "name": "evaluation-platform",
+  "version": "0.0.1",
+  "private": true,
+  "description": "摄像头场景大模型评测平台",
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "build": "npm run build --workspace=frontend",
+    "lint": "npm run lint --workspace=frontend",
+    "install:all": "npm install"
+  }
+}
