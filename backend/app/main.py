@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
-from app.api import health, datasets, evaluation_data, annotations
+from app.api import health, datasets, evaluation_data, annotations, tasks
 
 settings = get_settings()
 
@@ -23,6 +23,7 @@ app.include_router(health.router, prefix="/api", tags=["健康检查"])
 app.include_router(datasets.router, prefix="/api/datasets", tags=["评测集管理"])
 app.include_router(evaluation_data.router, prefix="/api/datasets", tags=["评测数据管理"])
 app.include_router(annotations.router, prefix="/api", tags=["数据标注"])
+app.include_router(tasks.router, prefix="/api", tags=["评测任务"])
 
 
 @app.get("/")

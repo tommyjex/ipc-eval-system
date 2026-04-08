@@ -2,6 +2,8 @@ import { createBrowserRouter, RouterProvider, Link, Outlet } from 'react-router-
 import { DatasetListPage } from './pages/datasets/DatasetListPage';
 import { DatasetCreatePage } from './pages/datasets/DatasetCreatePage';
 import { DatasetDetailPage } from './pages/datasets/DatasetDetailPage';
+import { TaskListPage } from './pages/tasks/TaskListPage';
+import { TaskDetailPage } from './pages/tasks/TaskDetailPage';
 
 function Layout() {
   return (
@@ -21,6 +23,9 @@ function Layout() {
               <div className="ml-10 flex items-center space-x-4">
                 <Link to="/datasets" className="text-gray-600 hover:text-gray-900 px-3 py-2">
                   评测集管理
+                </Link>
+                <Link to="/tasks" className="text-gray-600 hover:text-gray-900 px-3 py-2">
+                  评测任务
                 </Link>
               </div>
             </div>
@@ -106,14 +111,17 @@ const router = createBrowserRouter(
           path: 'datasets/:id',
           element: <DatasetDetailPage />,
         },
+        {
+          path: 'tasks',
+          element: <TaskListPage />,
+        },
+        {
+          path: 'tasks/:id',
+          element: <TaskDetailPage />,
+        },
       ],
     },
-  ],
-  {
-    future: {
-      v7_startTransition: true,
-    },
-  }
+  ]
 );
 
 function App() {

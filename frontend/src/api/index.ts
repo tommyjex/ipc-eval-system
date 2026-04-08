@@ -228,3 +228,64 @@ export interface AIAnnotationStatus {
   completed: number;
   failed: number;
 }
+
+export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export type ModelProvider = 'volcengine' | 'aliyun' | 'gemini' | 'openai' | 'aws';
+
+export interface EvaluationTask {
+  id: number;
+  dataset_id: number;
+  name: string;
+  target_model: string;
+  model_provider: ModelProvider | null;
+  scoring_criteria: string | null;
+  status: TaskStatus;
+  created_at: string;
+  updated_at: string | null;
+  completed_at: string | null;
+}
+
+export interface EvaluationTaskCreate {
+  dataset_id: number;
+  name: string;
+  target_model: string;
+  model_provider?: ModelProvider;
+  scoring_criteria?: string;
+}
+
+export interface TaskResult {
+  id: number;
+  task_id: number;
+  data_id: number;
+  model_output: string | null;
+  score: number | null;
+  score_reason: string | null;
+  created_at: string;
+}
+
+export interface TaskResultDetail extends TaskResult {
+  file_name: string;
+  file_type: string;
+  download_url: string | null;
+  ground_truth: string | null;
+}
+
+export const taskApi = {
+  list: (params?: { dataset_id?: number; status?: TaskStatus; page?: number; page_size?: number }) =>
+    api.get<{ items: EvaluationTask[]; total: number }>('/tasks', params),
+  get: (taskId: number) =>
+    api.get<EvaluationTask>(`/tasks/${taskId}`),
+  create: (data: EvaluationTaskCreate) =>
+    api.post<EvaluationTask>('/tasks', data),
+  update: (taskId: number, data: Partial<EvaluationTaskCreate & { status: TaskStatus }>) =>
+    api.put<EvaluationTask>(`/tasks/${taskId}`, data),
+  delete: (taskId: number) =>
+    api.delete(`/tasks/${taskId}`),
+  run: (taskId: number) =>
+    api.post<{ message: string; task_id: number }>(`/tasks/${taskId}/run`),
+  getResults: (taskId: number, params?: { page?: number; page_size?: number }) =>
+    api.get<{ items: TaskResult[]; total: number }>(`/tasks/${taskId}/results`, params),
+  getResultsDetail: (taskId: number, params?: { page?: number; page_size?: number }) =>
+    api.get<TaskResultDetail[]>(`/tasks/${taskId}/results/detail`, params),
+};

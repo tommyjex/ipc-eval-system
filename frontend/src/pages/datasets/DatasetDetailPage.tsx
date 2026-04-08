@@ -37,6 +37,10 @@ export const DatasetDetailPage: React.FC = () => {
   const [sceneValue, setSceneValue] = useState<DatasetScene | ''>('');
   const [savingScene, setSavingScene] = useState(false);
   
+  const [editingName, setEditingName] = useState(false);
+  const [nameValue, setNameValue] = useState('');
+  const [savingName, setSavingName] = useState(false);
+  
   const [editingPrompt, setEditingPrompt] = useState(false);
   const [promptValue, setPromptValue] = useState('');
   const [savingPrompt, setSavingPrompt] = useState(false);
@@ -307,6 +311,20 @@ export const DatasetDetailPage: React.FC = () => {
     }
   };
 
+  const handleSaveName = async () => {
+    if (!id || !nameValue.trim()) return;
+    setSavingName(true);
+    try {
+      await datasetApi.update(parseInt(id), { name: nameValue.trim() });
+      setEditingName(false);
+      fetchDataset();
+    } catch (err) {
+      alert('保存失败: ' + (err instanceof Error ? err.message : '未知错误'));
+    } finally {
+      setSavingName(false);
+    }
+  };
+
   const isVideo = (fileType: string) => 
     ['mp4', 'avi', 'mov', 'mkv', 'flv', 'wmv'].includes(fileType.toLowerCase());
 
@@ -333,7 +351,42 @@ export const DatasetDetailPage: React.FC = () => {
       </div>
 
       <div className="bg-white rounded-lg shadow p-6 mb-6">
-        <h1 className="text-2xl font-bold mb-2">{dataset.name}</h1>
+        <div className="flex items-start justify-between mb-2">
+          {editingName ? (
+            <div className="flex items-center space-x-2 flex-1">
+              <input
+                type="text"
+                value={nameValue}
+                onChange={(e) => setNameValue(e.target.value)}
+                className="flex-1 px-3 py-2 border rounded text-xl font-bold"
+                placeholder="请输入评测集名称"
+              />
+              <button
+                onClick={handleSaveName}
+                disabled={savingName || !nameValue.trim()}
+                className="px-3 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:bg-gray-400"
+              >
+                {savingName ? '保存中...' : '保存'}
+              </button>
+              <button
+                onClick={() => { setEditingName(false); setNameValue(''); }}
+                className="px-3 py-2 border rounded text-sm hover:bg-gray-50"
+              >
+                取消
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center space-x-2">
+              <h1 className="text-2xl font-bold">{dataset.name}</h1>
+              <button
+                onClick={() => { setEditingName(true); setNameValue(dataset.name); }}
+                className="text-gray-400 hover:text-gray-600 text-sm"
+              >
+                ✏️ 编辑
+              </button>
+            </div>
+          )}
+        </div>
         <p className="text-gray-600 mb-4">{dataset.description || '暂无描述'}</p>
         <div className="flex flex-wrap gap-4 text-sm items-center mb-4">
           <span className={`px-2 py-1 rounded ${

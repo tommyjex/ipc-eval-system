@@ -24,6 +24,7 @@ class Dataset(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), comment="更新时间")
 
     evaluation_data = relationship("EvaluationData", back_populates="dataset", cascade="all, delete-orphan")
+    tasks = relationship("EvaluationTask", back_populates="dataset", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_datasets_status", "status"),
@@ -55,6 +56,7 @@ class EvaluationData(Base):
 
     dataset = relationship("Dataset", back_populates="evaluation_data")
     annotations = relationship("Annotation", back_populates="evaluation_data", cascade="all, delete-orphan")
+    results = relationship("TaskResult", back_populates="data", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_evaluation_data_dataset_id", "dataset_id"),
