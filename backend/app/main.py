@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
-from app.api import health, datasets, evaluation_data, annotations, tasks
+from app.core.database import init_db
+from app.api import health, datasets, evaluation_data, annotations, tasks, scoring_templates, prompt_templates
 
 settings = get_settings()
 
@@ -24,6 +25,13 @@ app.include_router(datasets.router, prefix="/api/datasets", tags=["评测集管�
 app.include_router(evaluation_data.router, prefix="/api/datasets", tags=["评测数据管理"])
 app.include_router(annotations.router, prefix="/api", tags=["数据标注"])
 app.include_router(tasks.router, prefix="/api", tags=["评测任务"])
+app.include_router(scoring_templates.router, prefix="/api", tags=["评分标准模板"])
+app.include_router(prompt_templates.router, prefix="/api", tags=["任务 Prompt 模板"])
+
+
+@app.on_event("startup")
+def startup():
+    init_db()
 
 
 @app.get("/")

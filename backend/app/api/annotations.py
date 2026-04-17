@@ -5,7 +5,7 @@ import uuid
 import asyncio
 import json
 
-from app.core.database import get_db
+from app.core.database import get_db, SessionLocal
 from app.core.config import get_settings
 from app.models import EvaluationData, Annotation, Dataset
 from app.schemas import (
@@ -104,7 +104,8 @@ async def create_ai_annotations(data: AIAnnotationRequest, db: Session = Depends
         failed=0,
     )
 
-    asyncio.create_task(_process_ai_annotations(task_id, data.data_ids, data.model, data.prompt, db))
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _process_ai_annotations, task_id, data.data_ids, data.model, data.prompt)
 
     return _ai_annotation_tasks[task_id]
 
@@ -150,81 +151,84 @@ def update_annotation(annotation_id: int, data: AnnotationUpdate, db: Session = 
     return _to_annotation_response(annotation)
 
 
-async def _process_ai_annotations(
+def _process_ai_annotations(
     task_id: str,
     data_ids: list[int],
     model: Optional[str],
     prompt: Optional[str],
-    db: Session
 ):
-    ark_client = get_ark_client()
-    settings = get_settings()
+    db = SessionLocal()
+    try:
+        ark_client = get_ark_client()
+        settings = get_settings()
 
-    first_data = db.query(EvaluationData).filter(EvaluationData.id == data_ids[0]).first()
-    if not first_data:
-        _ai_annotation_tasks[task_id].status = "completed"
-        return
+        first_data = db.query(EvaluationData).filter(EvaluationData.id == data_ids[0]).first()
+        if not first_data:
+            _ai_annotation_tasks[task_id].status = "completed"
+            return
 
-    dataset = db.query(Dataset).filter(Dataset.id == first_data.dataset_id).first()
-    annotation_prompt = prompt or (dataset.annotation_prompt if dataset else None)
-    custom_tags = None
-    if dataset and dataset.custom_tags:
-        try:
-            custom_tags = json.loads(dataset.custom_tags)
-        except:
-            custom_tags = None
+        dataset = db.query(Dataset).filter(Dataset.id == first_data.dataset_id).first()
+        annotation_prompt = prompt or (dataset.annotation_prompt if dataset else None)
+        custom_tags = None
+        if dataset and dataset.custom_tags:
+            try:
+                custom_tags = json.loads(dataset.custom_tags)
+            except Exception:
+                custom_tags = None
 
-    for data_id in data_ids:
-        try:
-            eval_data = db.query(EvaluationData).filter(EvaluationData.id == data_id).first()
-            if not eval_data:
+        for data_id in data_ids:
+            try:
+                eval_data = db.query(EvaluationData).filter(EvaluationData.id == data_id).first()
+                if not eval_data:
+                    _ai_annotation_tasks[task_id].failed += 1
+                    continue
+
+                tos_client = get_tos_client()
+                download_url = tos_client.get_download_url(eval_data.tos_key)
+
+                is_gif = eval_data.file_type.lower() == "gif"
+
+                if is_gif:
+                    result = ark_client.annotate_gif(
+                        download_url,
+                        annotation_prompt,
+                        custom_tags,
+                        model or settings.ark_model
+                    )
+                else:
+                    content = ark_client.build_annotation_content(
+                        download_url,
+                        eval_data.file_type,
+                        annotation_prompt,
+                        custom_tags
+                    )
+                    result = ark_client.annotate(content, model or settings.ark_model)
+
+                annotation = db.query(Annotation).filter(Annotation.data_id == data_id).first()
+                if annotation:
+                    annotation.ground_truth = result
+                    annotation.annotation_type = AnnotationType.ai.value
+                    annotation.model_name = model or settings.ark_model
+                else:
+                    annotation = Annotation(
+                        data_id=data_id,
+                        ground_truth=result,
+                        annotation_type=AnnotationType.ai.value,
+                        model_name=model or settings.ark_model,
+                    )
+                    db.add(annotation)
+
+                eval_data.status = DataStatus.annotated.value
+                db.commit()
+
+                _ai_annotation_tasks[task_id].completed += 1
+            except Exception as e:
+                print(f"AI annotation error for data_id {data_id}: {e}")
                 _ai_annotation_tasks[task_id].failed += 1
-                continue
 
-            tos_client = get_tos_client()
-            download_url = tos_client.get_download_url(eval_data.tos_key)
-
-            is_gif = eval_data.file_type.lower() == "gif"
-            
-            if is_gif:
-                result = ark_client.annotate_gif(
-                    download_url,
-                    annotation_prompt,
-                    custom_tags,
-                    model or settings.ark_model
-                )
-            else:
-                content = ark_client.build_annotation_content(
-                    download_url,
-                    eval_data.file_type,
-                    annotation_prompt,
-                    custom_tags
-                )
-                result = ark_client.annotate(content, model or settings.ark_model)
-
-            annotation = db.query(Annotation).filter(Annotation.data_id == data_id).first()
-            if annotation:
-                annotation.ground_truth = result
-                annotation.annotation_type = AnnotationType.ai.value
-                annotation.model_name = model or settings.ark_model
-            else:
-                annotation = Annotation(
-                    data_id=data_id,
-                    ground_truth=result,
-                    annotation_type=AnnotationType.ai.value,
-                    model_name=model or settings.ark_model,
-                )
-                db.add(annotation)
-
-            eval_data.status = DataStatus.annotated.value
-            db.commit()
-
-            _ai_annotation_tasks[task_id].completed += 1
-        except Exception as e:
-            print(f"AI annotation error for data_id {data_id}: {e}")
-            _ai_annotation_tasks[task_id].failed += 1
-
-    _ai_annotation_tasks[task_id].status = "completed"
+        _ai_annotation_tasks[task_id].status = "completed"
+    finally:
+        db.close()
 
 
 def _to_annotation_response(annotation: Annotation) -> AnnotationResponse:

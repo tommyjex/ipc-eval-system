@@ -1,24 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { datasetApi, evaluationDataApi, annotationApi } from '../../api';
-import type { Dataset, EvaluationData, Annotation, DatasetType, DatasetScene, TOSFolder, TOSFile, AIAnnotationStatus } from '../../api';
+import type { Dataset, EvaluationData, DatasetType, DatasetScene, TOSFolder, TOSFile } from '../../api';
 import { FileUpload } from '../../components/upload/FileUpload';
-
-type Tab = 'data' | 'annotation';
 
 export const DatasetDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const [dataList, setDataList] = useState<EvaluationData[]>([]);
-  const [selectedTab, setSelectedTab] = useState<Tab>('data');
   const [loading, setLoading] = useState(true);
   
   const [showTOSModal, setShowTOSModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewData, setPreviewData] = useState<EvaluationData | null>(null);
-  const [previewTimestamp, setPreviewTimestamp] = useState(Date.now());
+  const [gifPreviewUrl, setGifPreviewUrl] = useState<string | null>(null);
+  const [gifPreviewLoading, setGifPreviewLoading] = useState(false);
   const [tosPath, setTosPath] = useState<string[]>([]);
   const [tosFolders, setTosFolders] = useState<TOSFolder[]>([]);
   const [tosFiles, setTosFiles] = useState<TOSFile[]>([]);
@@ -30,16 +27,13 @@ export const DatasetDetailPage: React.FC = () => {
   const [annotationText, setAnnotationText] = useState('');
   const [saving, setSaving] = useState(false);
   
-  const [aiAnnotating, setAiAnnotating] = useState<number | null>(null);
-  const [aiTaskId, setAiTaskId] = useState<string | null>(null);
+  const [aiAnnotatingIds, setAiAnnotatingIds] = useState<Set<number>>(new Set());
   
-  const [editingScene, setEditingScene] = useState(false);
+  const [editingBasics, setEditingBasics] = useState(false);
   const [sceneValue, setSceneValue] = useState<DatasetScene | ''>('');
-  const [savingScene, setSavingScene] = useState(false);
-  
-  const [editingName, setEditingName] = useState(false);
+  const [typeValue, setTypeValue] = useState<DatasetType>('video');
   const [nameValue, setNameValue] = useState('');
-  const [savingName, setSavingName] = useState(false);
+  const [savingBasics, setSavingBasics] = useState(false);
   
   const [editingPrompt, setEditingPrompt] = useState(false);
   const [promptValue, setPromptValue] = useState('');
@@ -54,6 +48,9 @@ export const DatasetDetailPage: React.FC = () => {
   const [dataPage, setDataPage] = useState(1);
   const [dataTotal, setDataTotal] = useState(0);
   const [dataPageSize, setDataPageSize] = useState<50 | 100>(50);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'annotated' | 'failed'>('all');
+  const [keywordInput, setKeywordInput] = useState('');
+  const [keywordFilter, setKeywordFilter] = useState('');
 
   const fetchDataset = async () => {
     if (!id) return;
@@ -61,7 +58,12 @@ export const DatasetDetailPage: React.FC = () => {
     try {
       const datasetRes = await datasetApi.get(parseInt(id));
       setDataset(datasetRes);
-      const dataRes = await evaluationDataApi.list(parseInt(id), { page: dataPage, page_size: dataPageSize });
+      const dataRes = await evaluationDataApi.list(parseInt(id), {
+        status: statusFilter === 'all' ? undefined : statusFilter,
+        keyword: keywordFilter || undefined,
+        page: dataPage,
+        page_size: dataPageSize
+      });
       setDataList(dataRes.items);
       setDataTotal(dataRes.total);
     } catch (err) {
@@ -71,28 +73,43 @@ export const DatasetDetailPage: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    fetchDataset();
-  }, [id, dataPage, dataPageSize]);
+  const updateDataRow = (updatedData: EvaluationData) => {
+    setDataList((prev) => prev.map((item) => (item.id === updatedData.id ? updatedData : item)));
+    setPreviewData((prev) => (prev && prev.id === updatedData.id ? updatedData : prev));
+  };
+
+  const fetchSingleData = async (dataId: number) => {
+    if (!id) return;
+    try {
+      const dataRes = await evaluationDataApi.list(parseInt(id), { page: dataPage, page_size: dataPageSize });
+      const freshData = dataRes.items.find((item) => item.id === dataId);
+      if (freshData) {
+        updateDataRow(freshData);
+      }
+    } catch (err) {
+      console.error('刷新单条数据失败:', err);
+    }
+  };
+
+  const removeRowIfFiltered = (dataId: number) => {
+    if (statusFilter !== 'pending') return false;
+    // In pending-only mode, once a row becomes annotated it should disappear.
+    setDataList((prev) => prev.filter((item) => item.id !== dataId));
+    setDataTotal((prev) => Math.max(0, prev - 1));
+    return true;
+  };
 
   useEffect(() => {
-    if (aiTaskId) {
-      const interval = setInterval(async () => {
-        try {
-          const status = await annotationApi.getAITaskStatus(aiTaskId);
-          if (status.status === 'completed') {
-            setAiTaskId(null);
-            setAiAnnotating(null);
-            fetchDataset();
-            clearInterval(interval);
-          }
-        } catch (err) {
-          console.error('查询AI标注状态失败:', err);
-        }
-      }, 2000);
-      return () => clearInterval(interval);
-    }
-  }, [aiTaskId]);
+    fetchDataset();
+  }, [id, dataPage, dataPageSize, statusFilter, keywordFilter]);
+
+  useEffect(() => {
+    return () => {
+      if (gifPreviewUrl) {
+        URL.revokeObjectURL(gifPreviewUrl);
+      }
+    };
+  }, [gifPreviewUrl]);
 
   const fetchTOSFolders = async (prefix: string = '') => {
     if (!id) return;
@@ -186,18 +203,25 @@ export const DatasetDetailPage: React.FC = () => {
 
   const openPreview = async (data: EvaluationData) => {
     setPreviewData(data);
-    setPreviewTimestamp(Date.now());
     setShowPreviewModal(true);
-    
-    try {
-      const dataRes = await evaluationDataApi.list(parseInt(id!), { page: dataPage, page_size: dataPageSize });
-      const freshData = dataRes.items.find(d => d.id === data.id);
-      if (freshData && freshData.download_url) {
-        setPreviewData(freshData);
-        setPreviewTimestamp(Date.now());
+
+    if (gifPreviewUrl) {
+      URL.revokeObjectURL(gifPreviewUrl);
+      setGifPreviewUrl(null);
+    }
+
+    if (data.file_type.toLowerCase() === 'gif' && data.download_url) {
+      setGifPreviewLoading(true);
+      try {
+        const response = await fetch(data.download_url);
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(new Blob([blob], { type: 'image/gif' }));
+        setGifPreviewUrl(objectUrl);
+      } catch (err) {
+        console.error('加载GIF预览失败:', err);
+      } finally {
+        setGifPreviewLoading(false);
       }
-    } catch (err) {
-      console.error('刷新预览URL失败:', err);
     }
   };
 
@@ -221,7 +245,9 @@ export const DatasetDetailPage: React.FC = () => {
       }
       setEditingAnnotation(null);
       setAnnotationText('');
-      fetchDataset();
+      if (!removeRowIfFiltered(dataId)) {
+        await fetchSingleData(dataId);
+      }
     } catch (err) {
       alert('保存失败: ' + (err instanceof Error ? err.message : '未知错误'));
     } finally {
@@ -230,7 +256,7 @@ export const DatasetDetailPage: React.FC = () => {
   };
 
   const handleAIAnnotate = async (dataId: number) => {
-    setAiAnnotating(dataId);
+    setAiAnnotatingIds((prev) => new Set(prev).add(dataId));
     try {
       const result = await annotationApi.aiAnnotate({ data_ids: [dataId] });
       const taskId = result.task_id;
@@ -239,21 +265,34 @@ export const DatasetDetailPage: React.FC = () => {
         try {
           const status = await annotationApi.getAITaskStatus(taskId);
           if (status.status === 'completed') {
-            setAiAnnotating(null);
-            setAiTaskId(null);
-            fetchDataset();
+            setAiAnnotatingIds((prev) => {
+              const next = new Set(prev);
+              next.delete(dataId);
+              return next;
+            });
+            if (!removeRowIfFiltered(dataId)) {
+              await fetchSingleData(dataId);
+            }
           } else {
             setTimeout(pollStatus, 2000);
           }
         } catch (err) {
-          setAiAnnotating(null);
+          setAiAnnotatingIds((prev) => {
+            const next = new Set(prev);
+            next.delete(dataId);
+            return next;
+          });
           alert('查询标注状态失败: ' + (err instanceof Error ? err.message : '未知错误'));
         }
       };
       
       setTimeout(pollStatus, 2000);
     } catch (err) {
-      setAiAnnotating(null);
+      setAiAnnotatingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(dataId);
+        return next;
+      });
       alert('AI标注失败: ' + (err instanceof Error ? err.message : '未知错误'));
     }
   };
@@ -268,17 +307,21 @@ export const DatasetDetailPage: React.FC = () => {
     }
   };
 
-  const handleSaveScene = async () => {
-    if (!id) return;
-    setSavingScene(true);
+  const handleSaveBasics = async () => {
+    if (!id || !nameValue.trim()) return;
+    setSavingBasics(true);
     try {
-      await datasetApi.update(parseInt(id), { scene: sceneValue as DatasetScene || undefined });
-      setEditingScene(false);
+      await datasetApi.update(parseInt(id), {
+        name: nameValue.trim(),
+        type: typeValue,
+        scene: (sceneValue || undefined) as DatasetScene | undefined,
+      });
+      setEditingBasics(false);
       fetchDataset();
     } catch (err) {
       alert('保存失败: ' + (err instanceof Error ? err.message : '未知错误'));
     } finally {
-      setSavingScene(false);
+      setSavingBasics(false);
     }
   };
 
@@ -311,20 +354,6 @@ export const DatasetDetailPage: React.FC = () => {
     }
   };
 
-  const handleSaveName = async () => {
-    if (!id || !nameValue.trim()) return;
-    setSavingName(true);
-    try {
-      await datasetApi.update(parseInt(id), { name: nameValue.trim() });
-      setEditingName(false);
-      fetchDataset();
-    } catch (err) {
-      alert('保存失败: ' + (err instanceof Error ? err.message : '未知错误'));
-    } finally {
-      setSavingName(false);
-    }
-  };
-
   const isVideo = (fileType: string) => 
     ['mp4', 'avi', 'mov', 'mkv', 'flv', 'wmv'].includes(fileType.toLowerCase());
 
@@ -352,95 +381,108 @@ export const DatasetDetailPage: React.FC = () => {
 
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <div className="flex items-start justify-between mb-2">
-          {editingName ? (
-            <div className="flex items-center space-x-2 flex-1">
-              <input
-                type="text"
-                value={nameValue}
-                onChange={(e) => setNameValue(e.target.value)}
-                className="flex-1 px-3 py-2 border rounded text-xl font-bold"
-                placeholder="请输入评测集名称"
-              />
+          <div className="flex items-center space-x-2">
+            {!editingBasics ? (
+              <>
+                <h1 className="text-2xl font-bold">{dataset.name}</h1>
+                <button
+                  onClick={() => {
+                    setEditingBasics(true);
+                    setNameValue(dataset.name);
+                    setTypeValue(dataset.type);
+                    setSceneValue(dataset.scene || '');
+                  }}
+                  className="text-gray-400 hover:text-gray-600 text-sm"
+                >
+                  ✏️ 编辑基础信息
+                </button>
+              </>
+            ) : (
+              <h1 className="text-2xl font-bold">编辑基础信息</h1>
+            )}
+          </div>
+        </div>
+        <p className="text-gray-600 mb-4">{dataset.description || '暂无描述'}</p>
+        {editingBasics ? (
+          <div className="mb-4 rounded-lg border bg-gray-50 p-4">
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">评测集名称</label>
+                <input
+                  type="text"
+                  value={nameValue}
+                  onChange={(e) => setNameValue(e.target.value)}
+                  className="w-full rounded border px-3 py-2 text-sm"
+                  placeholder="请输入评测集名称"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">评测集类型</label>
+                <select
+                  value={typeValue}
+                  onChange={(e) => setTypeValue(e.target.value as DatasetType)}
+                  className="w-full rounded border px-3 py-2 text-sm"
+                >
+                  <option value="video">视频类型</option>
+                  <option value="image">图片类型</option>
+                  <option value="mixed">图片+视频</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">业务场景</label>
+                <select
+                  value={sceneValue}
+                  onChange={(e) => setSceneValue(e.target.value as DatasetScene | '')}
+                  className="w-full rounded border px-3 py-2 text-sm"
+                >
+                  <option value="">请选择</option>
+                  <option value="video_retrieval">录像检索</option>
+                  <option value="smart_alert">智能消息告警</option>
+                </select>
+              </div>
+            </div>
+            <div className="mt-4 flex space-x-2">
               <button
-                onClick={handleSaveName}
-                disabled={savingName || !nameValue.trim()}
+                onClick={handleSaveBasics}
+                disabled={savingBasics || !nameValue.trim()}
                 className="px-3 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:bg-gray-400"
               >
-                {savingName ? '保存中...' : '保存'}
+                {savingBasics ? '保存中...' : '保存'}
               </button>
               <button
-                onClick={() => { setEditingName(false); setNameValue(''); }}
+                onClick={() => {
+                  setEditingBasics(false);
+                  setNameValue('');
+                  setTypeValue(dataset.type);
+                  setSceneValue(dataset.scene || '');
+                }}
                 className="px-3 py-2 border rounded text-sm hover:bg-gray-50"
               >
                 取消
               </button>
             </div>
-          ) : (
-            <div className="flex items-center space-x-2">
-              <h1 className="text-2xl font-bold">{dataset.name}</h1>
-              <button
-                onClick={() => { setEditingName(true); setNameValue(dataset.name); }}
-                className="text-gray-400 hover:text-gray-600 text-sm"
-              >
-                ✏️ 编辑
-              </button>
-            </div>
-          )}
-        </div>
-        <p className="text-gray-600 mb-4">{dataset.description || '暂无描述'}</p>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-4 text-sm items-center mb-4">
+            <span className={`px-2 py-1 rounded ${
+              dataset.type === 'video' ? 'bg-purple-100 text-purple-800' : 
+              dataset.type === 'image' ? 'bg-green-100 text-green-800' : 
+              'bg-blue-100 text-blue-800'
+            }`}>
+              {dataset.type === 'video' ? '视频类型' : dataset.type === 'image' ? '图片类型' : '图片+视频'}
+            </span>
+            {dataset.scene && (
+              <span className={`px-2 py-1 rounded ${
+                dataset.scene === 'video_retrieval' ? 'bg-orange-100 text-orange-800' : 
+                'bg-teal-100 text-teal-800'
+              }`}>
+                {dataset.scene === 'video_retrieval' ? '录像检索' : '智能消息告警'}
+              </span>
+            )}
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-4 text-sm items-center mb-4">
-          <span className={`px-2 py-1 rounded ${
-            dataset.type === 'video' ? 'bg-purple-100 text-purple-800' : 
-            dataset.type === 'image' ? 'bg-green-100 text-green-800' : 
-            'bg-blue-100 text-blue-800'
-          }`}>
-            {dataset.type === 'video' ? '视频类型' : dataset.type === 'image' ? '图片类型' : '图片+视频'}
-          </span>
-          
-          {editingScene ? (
-            <div className="flex items-center space-x-2">
-              <select
-                value={sceneValue}
-                onChange={(e) => setSceneValue(e.target.value as DatasetScene | '')}
-                className="px-2 py-1 border rounded text-sm"
-              >
-                <option value="">请选择</option>
-                <option value="video_retrieval">录像检索</option>
-                <option value="smart_alert">智能消息告警</option>
-              </select>
-              <button
-                onClick={handleSaveScene}
-                disabled={savingScene}
-                className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:bg-gray-400"
-              >
-                {savingScene ? '保存中...' : '保存'}
-              </button>
-              <button
-                onClick={() => { setEditingScene(false); setSceneValue(''); }}
-                className="px-2 py-1 border rounded text-xs hover:bg-gray-50"
-              >
-                取消
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center space-x-2">
-              {dataset.scene && (
-                <span className={`px-2 py-1 rounded ${
-                  dataset.scene === 'video_retrieval' ? 'bg-orange-100 text-orange-800' : 
-                  'bg-teal-100 text-teal-800'
-                }`}>
-                  {dataset.scene === 'video_retrieval' ? '录像检索' : '智能消息告警'}
-                </span>
-              )}
-              <button
-                onClick={() => { setEditingScene(true); setSceneValue(dataset.scene || ''); }}
-                className="text-gray-400 hover:text-gray-600 text-xs"
-              >
-                {dataset.scene ? '编辑' : '+ 添加场景'}
-              </button>
-            </div>
-          )}
-          
           <span className="text-gray-500">
             数据量: {dataset.data_count} | 已标注: {dataset.annotated_count}
           </span>
@@ -561,22 +603,68 @@ export const DatasetDetailPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex space-x-4 mb-6">
-        <button
-          onClick={() => setSelectedTab('data')}
-          className={`px-4 py-2 rounded ${
-            selectedTab === 'data' ? 'bg-blue-600 text-white' : 'bg-gray-100'
-          }`}
-        >
-          数据管理
-        </button>
-      </div>
-
-      {selectedTab === 'data' && (
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-bold">数据管理</h2>
-            <div className="flex space-x-2">
+      <div className="bg-white rounded-lg shadow p-6">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-bold">数据管理</h2>
+              <span className="text-sm text-gray-500">当前评测集的数据与标注列表</span>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-stretch gap-3">
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+              <span className="text-xs font-medium text-gray-500">筛选</span>
+              <input
+                type="text"
+                value={keywordInput}
+                onChange={(e) => setKeywordInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    setDataPage(1);
+                    setKeywordFilter(keywordInput.trim());
+                  }
+                }}
+                placeholder="按对象名或标注结果筛选"
+                className="w-56 rounded border px-3 py-2 text-sm"
+              />
+              <select
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value as typeof statusFilter);
+                  setDataPage(1);
+                }}
+                className="rounded border px-3 py-2 text-sm"
+              >
+                <option value="all">全部状态</option>
+                <option value="pending">未标注</option>
+                <option value="annotated">已标注</option>
+                <option value="failed">失败</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => {
+                  setDataPage(1);
+                  setKeywordFilter(keywordInput.trim());
+                }}
+                className="px-3 py-2 rounded border text-sm hover:bg-gray-50"
+              >
+                筛选
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setKeywordInput('');
+                  setKeywordFilter('');
+                  setStatusFilter('all');
+                  setDataPage(1);
+                }}
+                className="px-3 py-2 rounded border text-sm hover:bg-gray-50"
+              >
+                重置
+              </button>
+            </div>
+            <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+              <span className="text-xs font-medium text-gray-500">上传</span>
               <button
                 onClick={() => setShowUploadModal(true)}
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
@@ -591,24 +679,25 @@ export const DatasetDetailPage: React.FC = () => {
               </button>
             </div>
           </div>
+        </div>
 
-          {dataList.length === 0 ? (
-            <p className="text-gray-500 text-center py-4">暂无数据</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full border-collapse">
-                <thead>
-                  <tr className="bg-gray-50">
-                    <th className="border px-4 py-2 text-left w-48">对象名称</th>
-                    <th className="border px-4 py-2 text-left w-32">对象预览</th>
-                    <th className="border px-4 py-2 text-left">标注结果</th>
-                    <th className="border px-4 py-2 text-left w-40">更新时间</th>
-                    <th className="border px-4 py-2 text-left w-40">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dataList.map((data) => (
-                    <tr key={data.id} className="hover:bg-gray-50">
+        {dataList.length === 0 ? (
+          <p className="text-gray-500 text-center py-4">暂无数据</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full border-collapse">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="border px-4 py-2 text-left w-48">对象名称</th>
+                  <th className="border px-4 py-2 text-left w-32">对象预览</th>
+                  <th className="border px-4 py-2 text-left">标注结果</th>
+                  <th className="border px-4 py-2 text-left w-40">更新时间</th>
+                  <th className="border px-4 py-2 text-left w-40">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dataList.map((data) => (
+                  <tr key={data.id} className="hover:bg-gray-50">
                       <td className="border px-4 py-2">
                         <div className="flex items-center">
                           <span className="text-lg mr-2">{isVideo(data.file_type) ? '🎬' : '🖼️'}</span>
@@ -670,10 +759,17 @@ export const DatasetDetailPage: React.FC = () => {
                         <div className="flex space-x-2">
                           <button
                             onClick={() => handleAIAnnotate(data.id)}
-                            disabled={aiAnnotating === data.id}
-                            className="px-2 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700 disabled:bg-gray-400"
+                            disabled={aiAnnotatingIds.has(data.id)}
+                            className="inline-flex items-center gap-2 whitespace-nowrap px-2 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700 disabled:bg-gray-400"
                           >
-                            {aiAnnotating === data.id ? '标注中...' : '模型标注'}
+                            {aiAnnotatingIds.has(data.id) ? (
+                              <>
+                                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                                <span className="whitespace-nowrap">标注中...</span>
+                              </>
+                            ) : (
+                              '模型标注'
+                            )}
                           </button>
                           <button
                             onClick={() => handleDelete(data.id)}
@@ -684,63 +780,90 @@ export const DatasetDetailPage: React.FC = () => {
                         </div>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
           
-          {dataTotal > 0 && (
-            <div className="flex justify-between items-center mt-4 pt-4 border-t">
-              <div className="flex items-center space-x-2">
-                <span className="text-gray-500 text-sm">共 {dataTotal} 条</span>
-                <select
-                  value={dataPageSize}
-                  onChange={(e) => { setDataPageSize(Number(e.target.value) as 50 | 100); setDataPage(1); }}
-                  className="px-2 py-1 border rounded text-sm"
-                >
-                  <option value={50}>50条/页</option>
-                  <option value={100}>100条/页</option>
-                </select>
-              </div>
-              
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => setDataPage((p) => Math.max(1, p - 1))}
-                  disabled={dataPage === 1}
-                  className="px-3 py-1 border rounded text-sm disabled:opacity-50"
-                >
-                  上一页
-                </button>
-                <span className="px-3 py-1 text-sm">
-                  第 {dataPage} / {Math.ceil(dataTotal / dataPageSize)} 页
-                </span>
-                <button
-                  onClick={() => setDataPage((p) => Math.min(Math.ceil(dataTotal / dataPageSize), p + 1))}
-                  disabled={dataPage >= Math.ceil(dataTotal / dataPageSize)}
-                  className="px-3 py-1 border rounded text-sm disabled:opacity-50"
-                >
-                  下一页
-                </button>
-              </div>
+        {dataTotal > 0 && (
+          <div className="flex justify-between items-center mt-4 pt-4 border-t">
+            <div className="flex items-center space-x-2">
+              <span className="text-gray-500 text-sm">共 {dataTotal} 条</span>
+              <select
+                value={dataPageSize}
+                onChange={(e) => { setDataPageSize(Number(e.target.value) as 50 | 100); setDataPage(1); }}
+                className="px-2 py-1 border rounded text-sm"
+              >
+                <option value={50}>50条/页</option>
+                <option value={100}>100条/页</option>
+              </select>
             </div>
-          )}
-        </div>
-      )}
+
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setDataPage((p) => Math.max(1, p - 1))}
+                disabled={dataPage === 1}
+                className="px-3 py-1 border rounded text-sm disabled:opacity-50"
+              >
+                上一页
+              </button>
+              <span className="px-3 py-1 text-sm">
+                第 {dataPage} / {Math.ceil(dataTotal / dataPageSize)} 页
+              </span>
+              <button
+                onClick={() => setDataPage((p) => Math.min(Math.ceil(dataTotal / dataPageSize), p + 1))}
+                disabled={dataPage >= Math.ceil(dataTotal / dataPageSize)}
+                className="px-3 py-1 border rounded text-sm disabled:opacity-50"
+              >
+                下一页
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {showPreviewModal && previewData && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowPreviewModal(false)}>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => {
+          setShowPreviewModal(false);
+          setPreviewData(null);
+          if (gifPreviewUrl) {
+            URL.revokeObjectURL(gifPreviewUrl);
+            setGifPreviewUrl(null);
+          }
+        }}>
           <div className="bg-white rounded-lg shadow-lg max-w-4xl max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="p-4 border-b flex justify-between items-center">
               <h3 className="text-lg font-bold">{previewData.file_name}</h3>
-              <button onClick={() => setShowPreviewModal(false)} className="text-gray-500 hover:text-gray-700">✕</button>
+              <button
+                onClick={() => {
+                  setShowPreviewModal(false);
+                  setPreviewData(null);
+                  if (gifPreviewUrl) {
+                    URL.revokeObjectURL(gifPreviewUrl);
+                    setGifPreviewUrl(null);
+                  }
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
             </div>
             <div className="p-4 flex items-center justify-center" style={{ maxHeight: '70vh' }}>
               {isVideo(previewData.file_type) ? (
                 <video src={previewData.download_url || ''} className="max-w-full max-h-full" controls />
+              ) : previewData.file_type.toLowerCase() === 'gif' ? (
+                gifPreviewLoading ? (
+                  <div className="text-sm text-gray-500">GIF 加载中...</div>
+                ) : (
+                  <img
+                    src={gifPreviewUrl || previewData.download_url || ''}
+                    alt={previewData.file_name}
+                    className="max-w-full max-h-full object-contain"
+                  />
+                )
               ) : (
                 <img 
-                  key={previewTimestamp}
                   src={previewData.download_url || ''} 
                   alt={previewData.file_name} 
                   className="max-w-full max-h-full object-contain" 

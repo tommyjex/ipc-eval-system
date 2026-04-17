@@ -19,6 +19,13 @@ class Settings(BaseSettings):
     ark_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
     ark_model: str = "ep-20260215001006-86n7g"
 
+    # 阿里百炼 DashScope
+    dashscope_api_key: str
+    dashscope_base_url: str = "https://dashscope.aliyuncs.com/api/v1"
+    dashscope_debug_response: bool = False
+    task_inference_batch_size: int = 50
+    task_scoring_batch_size: int = 200
+
     db_host: str = "mysqlf4d4d1585fb1.rds.ivolces.com"
     db_port: int = 3306
     db_user: str = "xujianhua"

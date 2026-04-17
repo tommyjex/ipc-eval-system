@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { datasetApi } from '../../api';
-import type { Dataset, DatasetType, DatasetStatus } from '../../api';
+import type { Dataset, DatasetType, DatasetAnnotationStatus } from '../../api';
 
 export const DatasetListPage: React.FC = () => {
   const navigate = useNavigate();
@@ -9,7 +9,7 @@ export const DatasetListPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
     type: '' as DatasetType | '',
-    status: '' as DatasetStatus | '',
+    annotation_status: '' as DatasetAnnotationStatus | '',
     keyword: '',
   });
   const [page, setPage] = useState(1);
@@ -21,7 +21,7 @@ export const DatasetListPage: React.FC = () => {
     try {
       const res = await datasetApi.list({
         type: filters.type || undefined,
-        status: filters.status || undefined,
+        annotation_status: filters.annotation_status || undefined,
         keyword: filters.keyword || undefined,
         page,
         page_size: pageSize,
@@ -38,7 +38,21 @@ export const DatasetListPage: React.FC = () => {
 
   useEffect(() => {
     fetchDatasets();
-  }, [page, filters.type, filters.status, pageSize]);
+  }, [page, filters.type, filters.annotation_status, pageSize]);
+
+  const getAnnotationStatusBadge = (status: DatasetAnnotationStatus) => {
+    const styles: Record<DatasetAnnotationStatus, string> = {
+      pending: 'bg-gray-100 text-gray-800',
+      partial: 'bg-yellow-100 text-yellow-800',
+      annotated: 'bg-green-100 text-green-800',
+    };
+    const labels: Record<DatasetAnnotationStatus, string> = {
+      pending: '待标注',
+      partial: '部分标注',
+      annotated: '已标注',
+    };
+    return <span className={`px-2 py-1 rounded text-xs ${styles[status]}`}>{labels[status]}</span>;
+  };
 
   const handleDelete = async (id: number) => {
     if (!confirm('确定要删除这个评测集吗？')) return;
@@ -89,14 +103,14 @@ export const DatasetListPage: React.FC = () => {
             <option value="mixed">图片+视频</option>
           </select>
           <select
-            value={filters.status}
-            onChange={(e) => setFilters({ ...filters, status: e.target.value as DatasetStatus | '' })}
+            value={filters.annotation_status}
+            onChange={(e) => setFilters({ ...filters, annotation_status: e.target.value as DatasetAnnotationStatus | '' })}
             className="px-3 py-2 border rounded"
           >
             <option value="">全部状态</option>
-            <option value="draft">草稿</option>
-            <option value="ready">就绪</option>
-            <option value="archived">已归档</option>
+            <option value="pending">待标注</option>
+            <option value="partial">部分标注</option>
+            <option value="annotated">已标注</option>
           </select>
           <button
             onClick={fetchDatasets}
@@ -157,12 +171,7 @@ export const DatasetListPage: React.FC = () => {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-1 rounded text-xs ${
-                      dataset.status === 'draft' ? 'bg-gray-100 text-gray-800' :
-                      dataset.status === 'ready' ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {dataset.status === 'draft' ? '草稿' : dataset.status === 'ready' ? '就绪' : '已归档'}
-                    </span>
+                    {getAnnotationStatusBadge(dataset.annotation_status)}
                   </td>
                   <td className="px-4 py-3">{dataset.data_count}</td>
                   <td className="px-4 py-3">{dataset.annotated_count}</td>

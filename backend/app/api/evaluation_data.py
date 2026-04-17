@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import Optional
 
 from app.core.database import get_db
 from app.core.config import get_settings
-from app.models import Dataset, EvaluationData
+from app.models import Dataset, EvaluationData, Annotation
 from app.schemas import (
     EvaluationDataCreate,
     EvaluationDataResponse,
@@ -300,6 +301,7 @@ def import_from_tos(dataset_id: int, keys: list[str], db: Session = Depends(get_
 def list_evaluation_data(
     dataset_id: int,
     status: Optional[DataStatus] = Query(None, description="标注状态"),
+    keyword: Optional[str] = Query(None, description="关键词（文件名）"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     db: Session = Depends(get_db)
@@ -312,6 +314,13 @@ def list_evaluation_data(
 
     if status:
         query = query.filter(EvaluationData.status == status.value)
+    if keyword:
+        query = query.outerjoin(Annotation, Annotation.data_id == EvaluationData.id).filter(
+            or_(
+                EvaluationData.file_name.contains(keyword),
+                Annotation.ground_truth.contains(keyword),
+            )
+        ).distinct()
 
     total = query.count()
     data_list = query.order_by(EvaluationData.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
@@ -340,7 +349,6 @@ def delete_evaluation_data(dataset_id: int, data_id: int, db: Session = Depends(
 
 
 def _to_data_response(eval_data: EvaluationData) -> EvaluationDataResponse:
-    from app.models import Annotation
     tos_client = get_tos_client()
     download_url = tos_client.get_download_url(eval_data.tos_key)
 

@@ -1,5 +1,4 @@
-from datetime import datetime
-from sqlalchemy import Column, BigInteger, String, Text, Enum, DateTime, ForeignKey, Index, func
+from sqlalchemy import Column, BigInteger, String, Text, Enum, DateTime, ForeignKey, Index, func, Float
 from sqlalchemy.orm import relationship
 from app.models.base import Base
 
@@ -13,6 +12,8 @@ class EvaluationTask(Base):
     target_model = Column(String(100), nullable=False, comment="目标模型")
     model_provider = Column(String(50), comment="模型供应商")
     scoring_criteria = Column(Text, comment="评分标准")
+    prompt = Column(Text, comment="任务级提示词")
+    fps = Column(Float, nullable=False, default=0.3, server_default="0.3", comment="视频理解帧率")
     status = Column(
         Enum("pending", "running", "completed", "failed", name="task_status"),
         default="pending",
@@ -41,10 +42,23 @@ class TaskResult(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     task_id = Column(BigInteger, ForeignKey("evaluation_tasks.id", ondelete="CASCADE"), nullable=False, comment="任务ID")
     data_id = Column(BigInteger, ForeignKey("evaluation_data.id", ondelete="CASCADE"), nullable=False, comment="评测数据ID")
+    status = Column(String(20), nullable=False, default="pending", comment="执行状态")
     model_output = Column(Text, comment="模型输出")
+    input_tokens = Column(BigInteger, comment="输入 tokens")
+    output_tokens = Column(BigInteger, comment="输出 tokens")
     score = Column(BigInteger, comment="评分")
+    recall = Column(Float, comment="召回率")
+    accuracy = Column(Float, comment="准确率")
     score_reason = Column(Text, comment="评分原因")
+    scoring_status = Column(String(20), nullable=False, default="not_scored", comment="评分状态")
+    scoring_error_message = Column(Text, comment="评分失败原因")
+    scoring_model = Column(String(100), comment="评分模型")
+    scoring_started_at = Column(DateTime(timezone=True), comment="评分开始时间")
+    scoring_completed_at = Column(DateTime(timezone=True), comment="评分完成时间")
+    error_message = Column(Text, comment="失败原因")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), comment="更新时间")
+    completed_at = Column(DateTime(timezone=True), comment="完成时间")
 
     task = relationship("EvaluationTask", back_populates="results")
     data = relationship("EvaluationData", back_populates="results")
@@ -52,6 +66,8 @@ class TaskResult(Base):
     __table_args__ = (
         Index("idx_task_results_task_id", "task_id"),
         Index("idx_task_results_data_id", "data_id"),
+        Index("idx_task_results_status", "status"),
+        Index("idx_task_results_scoring_status", "scoring_status"),
         Index("idx_task_results_created_at", "created_at"),
     )
 

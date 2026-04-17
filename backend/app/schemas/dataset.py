@@ -21,6 +21,12 @@ class DatasetStatus(str, Enum):
     archived = "archived"
 
 
+class DatasetAnnotationStatus(str, Enum):
+    pending = "pending"
+    partial = "partial"
+    annotated = "annotated"
+
+
 class DataStatus(str, Enum):
     pending = "pending"
     annotated = "annotated"
@@ -48,6 +54,7 @@ class DatasetCreate(DatasetBase):
 class DatasetUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255, description="评测集名称")
     description: Optional[str] = Field(None, description="评测集描述")
+    type: Optional[DatasetType] = Field(None, description="评测集类型")
     status: Optional[DatasetStatus] = Field(None, description="评测集状态")
     scene: Optional[DatasetScene] = Field(None, description="业务场景")
     annotation_prompt: Optional[str] = Field(None, description="标注提示词")
@@ -57,6 +64,7 @@ class DatasetUpdate(BaseModel):
 class DatasetResponse(DatasetBase):
     id: int
     status: DatasetStatus
+    annotation_status: DatasetAnnotationStatus
     data_count: int = Field(default=0, description="数据数量")
     annotated_count: int = Field(default=0, description="已标注数量")
     created_at: datetime

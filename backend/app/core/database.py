@@ -19,8 +19,8 @@ except socket.gaierror:
 # 对密码进行URL编码，处理特殊字符
 encoded_password = quote_plus(settings.db_password)
 
-# 构建使用IP地址的数据库URL
-database_url = f"mysql+pymysql://{settings.db_user}:{encoded_password}@{connect_host}:{settings.db_port}/{settings.db_name}"
+# 构建使用IP地址的数据库URL，并显式使用 utf8mb4 以支持 emoji 等 4 字节字符
+database_url = f"mysql+pymysql://{settings.db_user}:{encoded_password}@{connect_host}:{settings.db_port}/{settings.db_name}?charset=utf8mb4"
 
 engine = create_engine(
     database_url,
