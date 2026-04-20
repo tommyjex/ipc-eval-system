@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { taskApi, datasetApi, scoringTemplateApi, promptTemplateApi } from '../../api';
 import type { EvaluationTask, TaskStatus, Dataset, DatasetScene, ModelProvider, ScoringTemplate, PromptTemplate } from '../../api';
@@ -7,11 +7,131 @@ const getRecentTemplateStorageKey = (scene: DatasetScene) => `recent-scoring-tem
 const getRecentPromptTemplateStorageKey = (scene: DatasetScene) => `recent-prompt-template:${scene}`;
 const normalizeFps = (value: number) => Math.max(0.01, Math.min(30, Number(value.toFixed(2))));
 const formatMetric = (value: number | null) => (value == null ? '-' : `${value.toFixed(2)}%`);
+type MultiSelectOption<T extends string> = { value: T; label: string };
+
+const TASK_STATUS_OPTIONS: MultiSelectOption<TaskStatus>[] = [
+  { value: 'pending', label: '待运行' },
+  { value: 'running', label: '运行中' },
+  { value: 'completed', label: '已完成' },
+  { value: 'failed', label: '失败' },
+];
+
+const MultiSelectDropdown = <T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: MultiSelectOption<T>[];
+  value: T[];
+  onChange: (next: T[]) => void;
+}) => {
+  const [open, setOpen] = useState(false);
+  const [draftValue, setDraftValue] = useState<T[]>(value);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const hasSelectedValue = value.length > 0;
+
+  useEffect(() => {
+    if (!open) {
+      setDraftValue(value);
+    }
+  }, [value, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!panelRef.current?.contains(event.target as Node)) {
+        setDraftValue(value);
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [open, value]);
+
+  const toggleOption = (optionValue: T) => {
+    if (draftValue.includes(optionValue)) {
+      setDraftValue(draftValue.filter((item) => item !== optionValue));
+    } else {
+      setDraftValue([...draftValue, optionValue]);
+    }
+  };
+
+  return (
+    <div ref={panelRef} className="relative min-w-[120px]">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className={`inline-flex items-center text-xs font-normal ${
+          hasSelectedValue ? 'text-orange-500 hover:text-orange-600' : 'text-gray-400 hover:text-gray-600'
+        }`}
+        aria-label={`筛选${label}`}
+      >
+        <span>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-2 w-56 rounded-md border bg-white p-2 shadow-lg">
+          <div className="mb-2 flex items-center justify-between border-b pb-2">
+            <span className="text-xs font-medium text-gray-700">{label}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setDraftValue([]);
+                onChange([]);
+                setOpen(false);
+              }}
+              className="text-xs text-blue-600 hover:text-blue-800"
+            >
+              清空
+            </button>
+          </div>
+          <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
+            {options.map((option) => (
+              <label key={option.value} className="flex cursor-pointer items-center gap-2 text-xs text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={draftValue.includes(option.value)}
+                  onChange={() => toggleOption(option.value)}
+                  className="rounded border-gray-300"
+                />
+                <span>{option.label}</span>
+              </label>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center justify-end gap-2 border-t pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setDraftValue(value);
+                setOpen(false);
+              }}
+              className="rounded border px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onChange(draftValue);
+                setOpen(false);
+              }}
+              className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700"
+            >
+              确定
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const TaskListPage: React.FC = () => {
   const navigate = useNavigate();
   const [tasks, setTasks] = useState<EvaluationTask[]>([]);
   const [loading, setLoading] = useState(true);
+  const [compareEnabled, setCompareEnabled] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [newTask, setNewTask] = useState<{
@@ -67,8 +187,10 @@ export const TaskListPage: React.FC = () => {
   const [page] = useState(1);
   const [, setTotal] = useState(0);
   const [pageSize] = useState<50 | 100>(50);
-  const [statusFilter, setStatusFilter] = useState<'all' | TaskStatus>('all');
-  const [datasetFilter, setDatasetFilter] = useState<'all' | string>('all');
+  const [statusFilter, setStatusFilter] = useState<TaskStatus[]>([]);
+  const [datasetFilter, setDatasetFilter] = useState<string[]>([]);
+  const [providerFilter, setProviderFilter] = useState<ModelProvider[]>([]);
+  const [targetModelFilter, setTargetModelFilter] = useState<string[]>([]);
   const [sortOption, setSortOption] = useState<'default' | 'avg_recall_desc' | 'avg_recall_asc' | 'avg_accuracy_desc' | 'avg_accuracy_asc'>('default');
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [selectedPromptTemplateId, setSelectedPromptTemplateId] = useState('');
@@ -129,8 +251,10 @@ export const TaskListPage: React.FC = () => {
           ? ['avg_recall', sortOption.endsWith('_asc') ? 'asc' : 'desc']
           : ['avg_accuracy', sortOption.endsWith('_asc') ? 'asc' : 'desc'];
       const res = await taskApi.list({
-        dataset_id: datasetFilter === 'all' ? undefined : parseInt(datasetFilter),
-        status: statusFilter === 'all' ? undefined : statusFilter,
+        dataset_id: datasetFilter.length > 0 ? datasetFilter.map((value) => parseInt(value, 10)) : undefined,
+        model_provider: providerFilter.length > 0 ? providerFilter : undefined,
+        target_model: targetModelFilter.length > 0 ? targetModelFilter : undefined,
+        status: statusFilter.length > 0 ? statusFilter : undefined,
         sort_by: sortBy as 'avg_recall' | 'avg_accuracy' | undefined,
         sort_order: sortOrder as 'asc' | 'desc' | undefined,
         page,
@@ -183,7 +307,19 @@ export const TaskListPage: React.FC = () => {
     fetchDatasets();
     fetchTemplates();
     fetchPromptTemplates();
-  }, [page, pageSize, statusFilter, datasetFilter, sortOption]);
+  }, [page, pageSize, statusFilter, datasetFilter, providerFilter, targetModelFilter, sortOption]);
+
+  useEffect(() => {
+    const checkCompareEnabled = async () => {
+      try {
+        const res = await taskApi.list({ status: ['completed'], page: 1, page_size: 2 });
+        setCompareEnabled(res.total >= 2);
+      } catch {
+        setCompareEnabled(false);
+      }
+    };
+    checkCompareEnabled();
+  }, []);
 
   const handleCreate = async () => {
     if (!newTask.name.trim() || !newTask.dataset_id || !newTask.target_model) return;
@@ -421,46 +557,27 @@ export const TaskListPage: React.FC = () => {
     return dataset ? dataset.name : String(datasetId);
   };
 
+  const datasetOptions: MultiSelectOption<string>[] = datasets.map((dataset) => ({
+    value: String(dataset.id),
+    label: dataset.name,
+  }));
+  const providerOptions: MultiSelectOption<ModelProvider>[] = Object.entries(modelOptions).map(([value, item]) => ({
+    value: value as ModelProvider,
+    label: item.label,
+  }));
+  const targetModelOptions: MultiSelectOption<string>[] = Array.from(
+    new Map(
+      Object.values(modelOptions)
+        .flatMap((provider) => provider.models)
+        .map((model) => [model.value, { value: model.value, label: model.label }]),
+    ).values(),
+  );
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">评测任务</h1>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <label htmlFor="task-dataset-filter" className="text-sm text-gray-600">
-              评测集
-            </label>
-            <select
-              id="task-dataset-filter"
-              value={datasetFilter}
-              onChange={(e) => setDatasetFilter(e.target.value)}
-              className="rounded border px-3 py-2 text-sm"
-            >
-              <option value="all">全部</option>
-              {datasets.map((dataset) => (
-                <option key={dataset.id} value={dataset.id}>
-                  {dataset.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-2">
-            <label htmlFor="task-status-filter" className="text-sm text-gray-600">
-              任务状态
-            </label>
-            <select
-              id="task-status-filter"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as 'all' | TaskStatus)}
-              className="rounded border px-3 py-2 text-sm"
-            >
-              <option value="all">全部</option>
-              <option value="pending">待运行</option>
-              <option value="running">运行中</option>
-              <option value="completed">已完成</option>
-              <option value="failed">失败</option>
-            </select>
-          </div>
           <div className="flex items-center gap-2">
             <label htmlFor="task-sort-option" className="text-sm text-gray-600">
               排序方式
@@ -491,6 +608,21 @@ export const TaskListPage: React.FC = () => {
             Prompt模板管理
           </button>
           <button
+            type="button"
+            onClick={() => {
+              if (!compareEnabled) {
+                alert('已完成的评测任务数不足 2 个，暂无法进入对比分析');
+                return;
+              }
+              navigate('/tasks/compare');
+            }}
+            className={`px-4 py-2 border rounded ${
+              compareEnabled ? 'hover:bg-gray-50' : 'cursor-not-allowed bg-gray-50 text-gray-400'
+            }`}
+          >
+            对比分析
+          </button>
+          <button
             onClick={() => setShowCreateModal(true)}
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
           >
@@ -501,20 +633,56 @@ export const TaskListPage: React.FC = () => {
 
       {loading ? (
         <div className="text-center py-10">加载中...</div>
-      ) : tasks.length === 0 ? (
-        <div className="text-center py-10 text-gray-500">
-          {statusFilter === 'all' ? '暂无评测任务' : '当前筛选条件下暂无评测任务'}
-        </div>
       ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <table className="w-full">
+        <div className="bg-white rounded-lg shadow overflow-x-auto">
+          <table className="min-w-[1200px] w-full">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left">任务名称</th>
-                <th className="px-4 py-3 text-left">评测集</th>
-                <th className="px-4 py-3 text-left">模型供应商</th>
-                <th className="px-4 py-3 text-left">目标模型</th>
-                <th className="px-4 py-3 text-left">状态</th>
+                <th className="px-4 py-3 text-left">
+                  <div className="flex items-center gap-2 whitespace-nowrap">
+                    <span className="whitespace-nowrap">评测集</span>
+                    <MultiSelectDropdown
+                      label="评测集"
+                      options={datasetOptions}
+                      value={datasetFilter}
+                      onChange={(next) => setDatasetFilter(next)}
+                    />
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-left">
+                  <div className="flex items-center gap-2 whitespace-nowrap">
+                    <span className="whitespace-nowrap">模型供应商</span>
+                    <MultiSelectDropdown
+                      label="模型供应商"
+                      options={providerOptions}
+                      value={providerFilter}
+                      onChange={(next) => setProviderFilter(next)}
+                    />
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-left">
+                  <div className="flex items-center gap-2 whitespace-nowrap">
+                    <span className="whitespace-nowrap">目标模型</span>
+                    <MultiSelectDropdown
+                      label="目标模型"
+                      options={targetModelOptions}
+                      value={targetModelFilter}
+                      onChange={(next) => setTargetModelFilter(next)}
+                    />
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-left">
+                  <div className="flex items-center gap-2 whitespace-nowrap">
+                    <span className="whitespace-nowrap">状态</span>
+                    <MultiSelectDropdown
+                      label="状态"
+                      options={TASK_STATUS_OPTIONS}
+                      value={statusFilter}
+                      onChange={(next) => setStatusFilter(next)}
+                    />
+                  </div>
+                </th>
                 <th className="px-4 py-3 text-left">平均召回率</th>
                 <th className="px-4 py-3 text-left">平均准确率</th>
                 <th className="px-4 py-3 text-left">创建时间</th>
@@ -522,7 +690,14 @@ export const TaskListPage: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {tasks.map((task) => (
+              {tasks.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="text-center py-10 text-gray-500">
+                    当前筛选条件下暂无评测任务
+                  </td>
+                </tr>
+              ) : (
+                tasks.map((task) => (
                 <tr key={task.id} className="border-t hover:bg-gray-50">
                   <td className="px-4 py-3">
                     <span
@@ -574,7 +749,8 @@ export const TaskListPage: React.FC = () => {
                     </div>
                   </td>
                 </tr>
-              ))}
+                ))
+              )}
             </tbody>
           </table>
         </div>

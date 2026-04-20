@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     debug: bool = True
     port: int = 3000
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175"]
+    admin_username: str = "admin"
+    admin_password: str = "AihymTs4X*7z*QGp"
 
     tos_access_key: str 
     tos_secret_key: str 
@@ -18,6 +20,8 @@ class Settings(BaseSettings):
     ark_api_key: str 
     ark_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
     ark_model: str = "ep-20260215001006-86n7g"
+    ark_timeout: int = 20
+    ark_max_retries: int = 2
 
     # 阿里百炼 DashScope
     dashscope_api_key: str
@@ -25,6 +29,7 @@ class Settings(BaseSettings):
     dashscope_debug_response: bool = False
     task_inference_batch_size: int = 50
     task_scoring_batch_size: int = 200
+    task_single_timeout_seconds: int = 120
 
     db_host: str = "mysqlf4d4d1585fb1.rds.ivolces.com"
     db_port: int = 3306

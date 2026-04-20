@@ -3,9 +3,14 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional
 import asyncio
+from collections import deque
+import json
 import logging
+import multiprocessing as mp
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+import time
+import urllib.request
 
 from app.core.config import get_settings
 from app.core.database import get_db, SessionLocal
@@ -34,7 +39,45 @@ router = APIRouter(prefix="/tasks", tags=["评测任务"])
 SMART_SCORING_MODEL = "doubao-seed-2-0-pro-260215"
 TASK_INFERENCE_BATCH_SIZE = get_settings().task_inference_batch_size
 TASK_SCORING_BATCH_SIZE = get_settings().task_scoring_batch_size
+TASK_SINGLE_TIMEOUT_SECONDS = get_settings().task_single_timeout_seconds
+INFERENCE_PROCESS_CONTEXT = mp.get_context("spawn")
 logger = logging.getLogger(__name__)
+DEBUG_TRACE_ENV_PATH = "/Users/bytedance/AI-IPC-Evaluation/ipc-eval-system/.dbg/task-25-timeout-trace.env"
+
+
+def _emit_timeout_trace(location: str, hypothesis_id: str, msg: str, data: dict):
+    #region debug-point trace-emit
+    debug_server_url = "http://127.0.0.1:7777/event"
+    session_id = "task-25-timeout-trace"
+    try:
+        with open(DEBUG_TRACE_ENV_PATH, "r", encoding="utf-8") as env_file:
+            for line in env_file:
+                line = line.strip()
+                if line.startswith("DEBUG_SERVER_URL="):
+                    debug_server_url = line.split("=", 1)[1]
+                elif line.startswith("DEBUG_SESSION_ID="):
+                    session_id = line.split("=", 1)[1]
+    except Exception:
+        return
+
+    payload = {
+        "sessionId": session_id,
+        "runId": "pre",
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "msg": msg,
+        "data": data,
+    }
+    try:
+        request = urllib.request.Request(
+            debug_server_url,
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(request, timeout=2).read()
+    except Exception:
+        pass
+    #endregion
 
 
 def _normalize_fps(value: float) -> float:
@@ -72,8 +115,229 @@ def _mark_task_results_failed(db: Session, task_id: int, error_message: str):
     )
 
 
-def _chunked(items: list[int], chunk_size: int) -> list[list[int]]:
-    return [items[index:index + chunk_size] for index in range(0, len(items), chunk_size)]
+def _set_task_result_failed(result: TaskResult, error_message: str):
+    result.status = TaskResultStatus.failed.value
+    result.model_output = None
+    result.input_tokens = None
+    result.output_tokens = None
+    result.score = None
+    result.recall = None
+    result.accuracy = None
+    result.score_reason = None
+    result.scoring_status = TaskScoringStatus.not_scored.value
+    result.scoring_error_message = None
+    result.scoring_model = None
+    result.scoring_started_at = None
+    result.scoring_completed_at = None
+    result.error_message = error_message
+    result.completed_at = datetime.now()
+
+
+def _mark_pending_task_results_failed(db: Session, task_id: int, error_message: str):
+    db.query(TaskResult).filter(
+        TaskResult.task_id == task_id,
+        TaskResult.status == TaskResultStatus.pending.value,
+    ).update(
+        {
+            TaskResult.status: TaskResultStatus.failed.value,
+            TaskResult.model_output: None,
+            TaskResult.input_tokens: None,
+            TaskResult.output_tokens: None,
+            TaskResult.score: None,
+            TaskResult.recall: None,
+            TaskResult.accuracy: None,
+            TaskResult.score_reason: None,
+            TaskResult.scoring_status: TaskScoringStatus.not_scored.value,
+            TaskResult.scoring_error_message: None,
+            TaskResult.scoring_model: None,
+            TaskResult.scoring_started_at: None,
+            TaskResult.scoring_completed_at: None,
+            TaskResult.error_message: error_message,
+            TaskResult.completed_at: datetime.now(),
+        },
+        synchronize_session=False,
+    )
+
+
+def _mark_selected_task_results_failed(
+    db: Session,
+    task_id: int,
+    data_ids: list[int],
+    error_message: str,
+    statuses: Optional[list[str]] = None,
+):
+    query = db.query(TaskResult).filter(TaskResult.task_id == task_id)
+    if data_ids:
+        query = query.filter(TaskResult.data_id.in_(data_ids))
+    if statuses:
+        query = query.filter(TaskResult.status.in_(statuses))
+
+    query.update(
+        {
+            TaskResult.status: TaskResultStatus.failed.value,
+            TaskResult.model_output: None,
+            TaskResult.input_tokens: None,
+            TaskResult.output_tokens: None,
+            TaskResult.score: None,
+            TaskResult.recall: None,
+            TaskResult.accuracy: None,
+            TaskResult.score_reason: None,
+            TaskResult.scoring_status: TaskScoringStatus.not_scored.value,
+            TaskResult.scoring_error_message: None,
+            TaskResult.scoring_model: None,
+            TaskResult.scoring_started_at: None,
+            TaskResult.scoring_completed_at: None,
+            TaskResult.error_message: error_message,
+            TaskResult.completed_at: datetime.now(),
+        },
+        synchronize_session=False,
+    )
+
+
+def _mark_running_task_results_failed(db: Session, task_id: int, error_message: str):
+    _mark_selected_task_results_failed(
+        db,
+        task_id,
+        [],
+        error_message,
+        statuses=[TaskResultStatus.running.value],
+    )
+
+
+def _run_single_task_result_process(
+    child_conn,
+    task_id: int,
+    data_id: int,
+    annotation_prompt: Optional[str],
+    custom_tags: Optional[list[str]],
+    target_model: Optional[str],
+    model_provider: Optional[str],
+    fps: float,
+):
+    try:
+        success = _run_single_task_result(
+            task_id,
+            data_id,
+            annotation_prompt,
+            custom_tags,
+            target_model,
+            model_provider,
+            fps,
+        )
+        child_conn.send({"success": success})
+    except BaseException as exc:
+        try:
+            child_conn.send({"success": False, "error": repr(exc)})
+        except Exception:
+            pass
+    finally:
+        child_conn.close()
+
+
+def _terminate_process(process: mp.Process):
+    if not process.is_alive():
+        return
+    process.terminate()
+    process.join(timeout=1)
+    if process.is_alive():
+        process.kill()
+        process.join(timeout=1)
+
+
+def _close_process_connection(connection):
+    try:
+        connection.close()
+    except Exception:
+        pass
+
+def _prepare_task_results(
+    db: Session,
+    task_id: int,
+    dataset_id: int,
+    target_data_ids: Optional[list[int]] = None,
+) -> list[EvaluationData]:
+    data_query = db.query(EvaluationData).filter(EvaluationData.dataset_id == dataset_id)
+    if target_data_ids:
+        data_query = data_query.filter(EvaluationData.id.in_(target_data_ids))
+    data_list = data_query.all()
+    if not data_list:
+        return []
+
+    if target_data_ids:
+        found_ids = {data.id for data in data_list}
+        invalid_ids = [data_id for data_id in target_data_ids if data_id not in found_ids]
+        if invalid_ids:
+            raise ValueError(f"存在无效的数据ID: {invalid_ids[:10]}")
+
+        existing_results = db.query(TaskResult).filter(
+            TaskResult.task_id == task_id,
+            TaskResult.data_id.in_(found_ids),
+        ).all()
+        existing_map = {result.data_id: result for result in existing_results}
+
+        for data in data_list:
+            result = existing_map.get(data.id)
+            if result is None:
+                db.add(TaskResult(
+                    task_id=task_id,
+                    data_id=data.id,
+                    status=TaskResultStatus.pending.value,
+                    scoring_status=TaskScoringStatus.not_scored.value,
+                    model_output=None,
+                    input_tokens=None,
+                    output_tokens=None,
+                    score=None,
+                    recall=None,
+                    accuracy=None,
+                    score_reason=None,
+                    scoring_error_message=None,
+                    scoring_model=None,
+                    scoring_started_at=None,
+                    scoring_completed_at=None,
+                    error_message=None,
+                    completed_at=None,
+                ))
+            else:
+                result.status = TaskResultStatus.pending.value
+                result.scoring_status = TaskScoringStatus.not_scored.value
+                result.model_output = None
+                result.input_tokens = None
+                result.output_tokens = None
+                result.score = None
+                result.recall = None
+                result.accuracy = None
+                result.score_reason = None
+                result.scoring_error_message = None
+                result.scoring_model = None
+                result.scoring_started_at = None
+                result.scoring_completed_at = None
+                result.error_message = None
+                result.completed_at = None
+    else:
+        db.query(TaskResult).filter(TaskResult.task_id == task_id).delete(synchronize_session=False)
+        for data in data_list:
+            db.add(TaskResult(
+                task_id=task_id,
+                data_id=data.id,
+                status=TaskResultStatus.pending.value,
+                scoring_status=TaskScoringStatus.not_scored.value,
+                model_output=None,
+                input_tokens=None,
+                output_tokens=None,
+                score=None,
+                recall=None,
+                accuracy=None,
+                score_reason=None,
+                scoring_error_message=None,
+                scoring_model=None,
+                scoring_started_at=None,
+                scoring_completed_at=None,
+                error_message=None,
+                completed_at=None,
+            ))
+
+    db.commit()
+    return data_list
 
 
 def _run_single_task_result(
@@ -92,7 +356,49 @@ def _run_single_task_result(
             TaskResult.data_id == data_id,
         ).first()
         data = db.query(EvaluationData).filter(EvaluationData.id == data_id).first()
-        if not result or not data:
+        # #endregion
+        if not result:
+            error_message = "未找到 TaskResult 记录，任务初始化结果可能未完成或结果已被删除"
+            # #endregion
+            logger.error(
+                "评测任务单条初始化异常: task_id=%s data_id=%s detail=%s",
+                task_id,
+                data_id,
+                error_message,
+            )
+            if data:
+                db.add(TaskResult(
+                    task_id=task_id,
+                    data_id=data_id,
+                    status=TaskResultStatus.failed.value,
+                    scoring_status=TaskScoringStatus.not_scored.value,
+                    model_output=None,
+                    input_tokens=None,
+                    output_tokens=None,
+                    score=None,
+                    recall=None,
+                    accuracy=None,
+                    score_reason=None,
+                    scoring_error_message=None,
+                    scoring_model=None,
+                    scoring_started_at=None,
+                    scoring_completed_at=None,
+                    error_message=error_message,
+                    completed_at=datetime.now(),
+                ))
+                db.commit()
+            return False
+        if not data:
+            error_message = "未找到 EvaluationData 记录，评测数据可能已被删除"
+            # #endregion
+            logger.error(
+                "评测任务单条初始化异常: task_id=%s data_id=%s detail=%s",
+                task_id,
+                data_id,
+                error_message,
+            )
+            _set_task_result_failed(result, error_message)
+            db.commit()
             return False
 
         try:
@@ -105,20 +411,7 @@ def _run_single_task_result(
                 model_provider,
                 target_model,
             )
-            result.status = TaskResultStatus.failed.value
-            result.input_tokens = None
-            result.output_tokens = None
-            result.recall = None
-            result.accuracy = None
-            result.score = None
-            result.score_reason = None
-            result.scoring_status = TaskScoringStatus.not_scored.value
-            result.scoring_error_message = None
-            result.scoring_model = None
-            result.scoring_started_at = None
-            result.scoring_completed_at = None
-            result.error_message = str(exc)
-            result.completed_at = datetime.now()
+            _set_task_result_failed(result, str(exc))
             db.commit()
             return False
 
@@ -126,11 +419,24 @@ def _run_single_task_result(
         result.error_message = None
         result.completed_at = None
         db.commit()
+        # #endregion
 
         try:
             tos_client = get_tos_client()
             download_url = tos_client.get_download_url(data.tos_key)
             is_gif = data.file_type.lower() == "gif"
+            _emit_timeout_trace(
+                "app/api/tasks.py:_run_single_task_result:inference-start",
+                "A",
+                "[DEBUG] start single result inference",
+                {
+                    "task_id": task_id,
+                    "data_id": data_id,
+                    "file_name": data.file_name,
+                    "file_type": data.file_type,
+                    "is_gif": is_gif,
+                },
+            )
 
             if is_gif:
                 inference_result = inference_client.annotate_gif_with_usage(
@@ -141,6 +447,18 @@ def _run_single_task_result(
                     fps=fps,
                 )
             else:
+                _emit_timeout_trace(
+                    "app/api/tasks.py:_run_single_task_result:build-content-start",
+                    "A",
+                    "[DEBUG] start build video content",
+                    {
+                        "task_id": task_id,
+                        "data_id": data_id,
+                        "file_name": data.file_name,
+                        "file_type": data.file_type,
+                        "download_url": download_url,
+                    },
+                )
                 content = inference_client.build_annotation_content(
                     download_url,
                     data.file_type,
@@ -148,7 +466,49 @@ def _run_single_task_result(
                     custom_tags,
                     fps=fps,
                 )
+                _emit_timeout_trace(
+                    "app/api/tasks.py:_run_single_task_result:build-content-finished",
+                    "B",
+                    "[DEBUG] finished build video content",
+                    {
+                        "task_id": task_id,
+                        "data_id": data_id,
+                        "file_name": data.file_name,
+                        "content_items": len(content),
+                    },
+                )
+                _emit_timeout_trace(
+                    "app/api/tasks.py:_run_single_task_result:annotate-start",
+                    "C",
+                    "[DEBUG] start ark annotate",
+                    {
+                        "task_id": task_id,
+                        "data_id": data_id,
+                        "file_name": data.file_name,
+                        "content_items": len(content),
+                    },
+                )
                 inference_result = inference_client.annotate_with_usage(content, target_model)
+                _emit_timeout_trace(
+                    "app/api/tasks.py:_run_single_task_result:annotate-finished",
+                    "C",
+                    "[DEBUG] finished ark annotate",
+                    {
+                        "task_id": task_id,
+                        "data_id": data_id,
+                        "file_name": data.file_name,
+                    },
+                )
+
+            db.refresh(result)
+            if result.status != TaskResultStatus.running.value:
+                logger.warning(
+                    "评测任务单条结果已被外部收尾，跳过成功回写: task_id=%s data_id=%s current_status=%s",
+                    task_id,
+                    data_id,
+                    result.status,
+                )
+                return False
 
             result.model_output = inference_result["text"]
             result.input_tokens = inference_result.get("input_tokens")
@@ -166,6 +526,7 @@ def _run_single_task_result(
             result.error_message = None
             result.completed_at = datetime.now()
             db.commit()
+            # #endregion
             return True
         except Exception as exc:
             logger.exception(
@@ -176,21 +537,18 @@ def _run_single_task_result(
                 model_provider,
                 target_model,
             )
-            result.status = TaskResultStatus.failed.value
-            result.input_tokens = None
-            result.output_tokens = None
-            result.recall = None
-            result.accuracy = None
-            result.score = None
-            result.score_reason = None
-            result.scoring_status = TaskScoringStatus.not_scored.value
-            result.scoring_error_message = None
-            result.scoring_model = None
-            result.scoring_started_at = None
-            result.scoring_completed_at = None
-            result.error_message = str(exc)
-            result.completed_at = datetime.now()
+            db.refresh(result)
+            if result.status != TaskResultStatus.running.value:
+                logger.warning(
+                    "评测任务单条结果已被外部收尾，跳过失败回写: task_id=%s data_id=%s current_status=%s",
+                    task_id,
+                    data_id,
+                    result.status,
+                )
+                return False
+            _set_task_result_failed(result, str(exc))
             db.commit()
+            # #endregion
             return False
     finally:
         db.close()
@@ -265,6 +623,66 @@ def _score_single_task_result(
         db.close()
 
 
+def _get_target_task_result_ids(
+    db: Session,
+    task_id: int,
+    target_result_ids: Optional[list[int]] = None,
+) -> list[int]:
+    query = db.query(TaskResult.id).filter(TaskResult.task_id == task_id)
+    if target_result_ids:
+        query = query.filter(TaskResult.id.in_(set(target_result_ids)))
+    return [row[0] for row in query.order_by(TaskResult.id.asc()).all()]
+
+
+def _get_scoreable_task_result_ids(
+    db: Session,
+    task_id: int,
+    target_result_ids: Optional[list[int]] = None,
+    scoring_statuses: Optional[list[str]] = None,
+) -> list[int]:
+    query = db.query(TaskResult.id)\
+        .join(EvaluationData, TaskResult.data_id == EvaluationData.id)\
+        .outerjoin(Annotation, EvaluationData.id == Annotation.data_id)\
+        .filter(TaskResult.task_id == task_id)\
+        .filter(TaskResult.model_output.isnot(None))\
+        .filter(TaskResult.model_output != "")\
+        .filter(Annotation.id.isnot(None))\
+        .filter(Annotation.ground_truth.isnot(None))\
+        .filter(Annotation.ground_truth != "")
+
+    if target_result_ids:
+        query = query.filter(TaskResult.id.in_(set(target_result_ids)))
+    if scoring_statuses:
+        query = query.filter(TaskResult.scoring_status.in_(scoring_statuses))
+
+    return [row[0] for row in query.distinct().order_by(TaskResult.id.asc()).all()]
+
+
+def _score_task_result_ids_concurrently(
+    task_id: int,
+    result_ids: list[int],
+    scoring_criteria: Optional[str],
+    max_workers: int,
+):
+    if not result_ids:
+        return
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(_score_single_task_result, result_id, scoring_criteria)
+            for result_id in result_ids
+        ]
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception:
+                logger.exception(
+                    "智能评分并发 worker 异常: task_id=%s model=%s",
+                    task_id,
+                    SMART_SCORING_MODEL,
+                )
+
+
 @router.post("", response_model=EvaluationTaskResponse, summary="创建评测任务")
 def create_task(data: EvaluationTaskCreate, db: Session = Depends(get_db)):
     dataset = db.query(Dataset).filter(Dataset.id == data.dataset_id).first()
@@ -289,8 +707,10 @@ def create_task(data: EvaluationTaskCreate, db: Session = Depends(get_db)):
 
 @router.get("", response_model=EvaluationTaskListResponse, summary="获取评测任务列表")
 def list_tasks(
-    dataset_id: Optional[int] = Query(None, description="评测集ID"),
-    status: Optional[TaskStatus] = Query(None, description="任务状态"),
+    dataset_id: Optional[list[int]] = Query(None, description="评测集ID"),
+    model_provider: Optional[list[str]] = Query(None, description="模型供应商"),
+    target_model: Optional[list[str]] = Query(None, description="目标模型"),
+    status: Optional[list[TaskStatus]] = Query(None, description="任务状态"),
     sort_by: Optional[str] = Query(None, description="排序字段，可选 avg_recall / avg_accuracy"),
     sort_order: Optional[str] = Query("desc", description="排序方向，可选 asc / desc"),
     page: int = Query(1, ge=1, description="页码"),
@@ -315,9 +735,13 @@ def list_tasks(
     )
     
     if dataset_id:
-        query = query.filter(EvaluationTask.dataset_id == dataset_id)
+        query = query.filter(EvaluationTask.dataset_id.in_(dataset_id))
+    if model_provider:
+        query = query.filter(EvaluationTask.model_provider.in_(model_provider))
+    if target_model:
+        query = query.filter(EvaluationTask.target_model.in_(target_model))
     if status:
-        query = query.filter(EvaluationTask.status == status.value)
+        query = query.filter(EvaluationTask.status.in_([item.value for item in status]))
 
     if sort_by not in (None, "avg_recall", "avg_accuracy"):
         raise HTTPException(status_code=400, detail="不支持的排序字段")
@@ -422,80 +846,6 @@ async def run_task(
     if not data_list:
         raise HTTPException(status_code=400, detail="评测集内暂无可评测数据")
 
-    if target_data_ids:
-        found_ids = {data.id for data in data_list}
-        invalid_ids = [data_id for data_id in target_data_ids if data_id not in found_ids]
-        if invalid_ids:
-            raise HTTPException(status_code=400, detail=f"存在无效的数据ID: {invalid_ids[:10]}")
-
-        existing_results = db.query(TaskResult).filter(
-            TaskResult.task_id == task_id,
-            TaskResult.data_id.in_(found_ids),
-        ).all()
-        existing_map = {result.data_id: result for result in existing_results}
-
-        for data in data_list:
-            result = existing_map.get(data.id)
-            if result is None:
-                db.add(TaskResult(
-                    task_id=task_id,
-                    data_id=data.id,
-                    status=TaskResultStatus.pending.value,
-                    scoring_status=TaskScoringStatus.not_scored.value,
-                    model_output=None,
-                    input_tokens=None,
-                    output_tokens=None,
-                    score=None,
-                    recall=None,
-                    accuracy=None,
-                    score_reason=None,
-                    scoring_error_message=None,
-                    scoring_model=None,
-                    scoring_started_at=None,
-                    scoring_completed_at=None,
-                    error_message=None,
-                    completed_at=None,
-                ))
-            else:
-                result.status = TaskResultStatus.pending.value
-                result.scoring_status = TaskScoringStatus.not_scored.value
-                result.model_output = None
-                result.input_tokens = None
-                result.output_tokens = None
-                result.score = None
-                result.recall = None
-                result.accuracy = None
-                result.score_reason = None
-                result.scoring_error_message = None
-                result.scoring_model = None
-                result.scoring_started_at = None
-                result.scoring_completed_at = None
-                result.error_message = None
-                result.completed_at = None
-    else:
-        db.query(TaskResult).filter(TaskResult.task_id == task_id).delete(synchronize_session=False)
-
-        for data in data_list:
-            db.add(TaskResult(
-                task_id=task_id,
-                data_id=data.id,
-                status=TaskResultStatus.pending.value,
-                scoring_status=TaskScoringStatus.not_scored.value,
-                model_output=None,
-                input_tokens=None,
-                output_tokens=None,
-                score=None,
-                recall=None,
-                accuracy=None,
-                score_reason=None,
-                scoring_error_message=None,
-                scoring_model=None,
-                scoring_started_at=None,
-                scoring_completed_at=None,
-                error_message=None,
-                completed_at=None,
-            ))
-    
     task.status = TaskStatus.running.value
     task.completed_at = None
     db.commit()
@@ -534,52 +884,52 @@ def score_task_results(
     if not task:
         raise HTTPException(status_code=404, detail="评测任务不存在")
 
-    results = db.query(TaskResult, Annotation)\
-        .join(EvaluationData, TaskResult.data_id == EvaluationData.id)\
-        .outerjoin(Annotation, EvaluationData.id == Annotation.data_id)\
-        .filter(TaskResult.task_id == task_id)\
-        .order_by(TaskResult.id.asc())\
-        .all()
     target_result_ids = payload.result_ids if payload and payload.result_ids else None
-    if target_result_ids:
-        results = [(result, annotation) for result, annotation in results if result.id in set(target_result_ids)]
-    if not results:
+    requested_result_ids = _get_target_task_result_ids(db, task_id, target_result_ids)
+    if not requested_result_ids:
         raise HTTPException(status_code=400, detail="暂无可评分结果")
 
-    scored_count = 0
-    skipped_count = 0
-    failed_count = 0
-    scoreable_result_ids: list[int] = []
+    scoreable_result_ids = _get_scoreable_task_result_ids(db, task_id, target_result_ids)
+    _score_task_result_ids_concurrently(
+        task_id,
+        scoreable_result_ids,
+        task.scoring_criteria,
+        TASK_SCORING_BATCH_SIZE,
+    )
 
-    for result, annotation in results:
-        if not result.model_output or not annotation or not annotation.ground_truth:
-            skipped_count += 1
-            continue
-        scoreable_result_ids.append(result.id)
+    remaining_retry_ids = _get_scoreable_task_result_ids(
+        db,
+        task_id,
+        target_result_ids,
+        scoring_statuses=[
+            TaskScoringStatus.not_scored.value,
+            TaskScoringStatus.score_failed.value,
+        ],
+    )
+    if remaining_retry_ids:
+        retry_workers = max(1, min(16, len(remaining_retry_ids), TASK_SCORING_BATCH_SIZE))
+        logger.warning(
+            "智能评分补偿重试: task_id=%s retry_count=%s workers=%s",
+            task_id,
+            len(remaining_retry_ids),
+            retry_workers,
+        )
+        _score_task_result_ids_concurrently(
+            task_id,
+            remaining_retry_ids,
+            task.scoring_criteria,
+            retry_workers,
+        )
 
-    with ThreadPoolExecutor(max_workers=TASK_SCORING_BATCH_SIZE) as executor:
-        for batch_ids in _chunked(scoreable_result_ids, TASK_SCORING_BATCH_SIZE):
-            futures = [
-                executor.submit(_score_single_task_result, result_id, task.scoring_criteria)
-                for result_id in batch_ids
-            ]
-            for future in as_completed(futures):
-                try:
-                    outcome, _ = future.result()
-                except Exception:
-                    logger.exception(
-                        "智能评分并发 worker 异常: task_id=%s model=%s",
-                        task_id,
-                        SMART_SCORING_MODEL,
-                    )
-                    outcome = "failed"
-
-                if outcome == "scored":
-                    scored_count += 1
-                elif outcome == "skipped":
-                    skipped_count += 1
-                else:
-                    failed_count += 1
+    final_statuses = [
+        row[0]
+        for row in db.query(TaskResult.scoring_status)
+        .filter(TaskResult.id.in_(requested_result_ids))
+        .all()
+    ]
+    scored_count = final_statuses.count(TaskScoringStatus.scored.value)
+    skipped_count = final_statuses.count(TaskScoringStatus.not_scored.value)
+    failed_count = final_statuses.count(TaskScoringStatus.score_failed.value)
 
     return {
         "message": "智能评分完成",
@@ -596,19 +946,22 @@ def get_task_results_detail(
     task_id: int,
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(50, ge=1, le=100, description="每页数量"),
-    status: Optional[TaskResultStatus] = Query(None, description="任务运行状态"),
-    scoring_status: Optional[TaskScoringStatus] = Query(None, description="评分状态"),
+    status: Optional[list[TaskResultStatus]] = Query(None, description="任务运行状态"),
+    scoring_status: Optional[list[TaskScoringStatus]] = Query(None, description="评分状态"),
     db: Session = Depends(get_db)
 ):
     task = db.query(EvaluationTask).filter(EvaluationTask.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="评测任务不存在")
 
+    status_values = [item.value for item in status] if status else []
+    scoring_status_values = [item.value for item in scoring_status] if scoring_status else []
+
     result_query = db.query(TaskResult).filter(TaskResult.task_id == task_id)
-    if status is not None:
-        result_query = result_query.filter(TaskResult.status == status.value)
-    if scoring_status is not None:
-        result_query = result_query.filter(TaskResult.scoring_status == scoring_status.value)
+    if status_values:
+        result_query = result_query.filter(TaskResult.status.in_(status_values))
+    if scoring_status_values:
+        result_query = result_query.filter(TaskResult.scoring_status.in_(scoring_status_values))
 
     total = result_query.count()
 
@@ -616,8 +969,8 @@ def get_task_results_detail(
         .join(EvaluationData, TaskResult.data_id == EvaluationData.id)\
         .outerjoin(Annotation, EvaluationData.id == Annotation.data_id)\
         .filter(TaskResult.task_id == task_id)\
-        .filter(TaskResult.status == status.value if status is not None else True)\
-        .filter(TaskResult.scoring_status == scoring_status.value if scoring_status is not None else True)\
+        .filter(TaskResult.status.in_(status_values) if status_values else True)\
+        .filter(TaskResult.scoring_status.in_(scoring_status_values) if scoring_status_values else True)\
         .order_by(EvaluationData.id.asc())\
         .offset((page - 1) * page_size)\
         .limit(page_size)\
@@ -683,19 +1036,22 @@ def get_task_results_detail(
 @router.get("/{task_id}/results/selection", response_model=TaskResultSelectionResponse, summary="获取筛选结果ID集合")
 def get_task_result_selection(
     task_id: int,
-    status: Optional[TaskResultStatus] = Query(None, description="任务运行状态"),
-    scoring_status: Optional[TaskScoringStatus] = Query(None, description="评分状态"),
+    status: Optional[list[TaskResultStatus]] = Query(None, description="任务运行状态"),
+    scoring_status: Optional[list[TaskScoringStatus]] = Query(None, description="评分状态"),
     db: Session = Depends(get_db),
 ):
     task = db.query(EvaluationTask).filter(EvaluationTask.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="评测任务不存在")
 
+    status_values = [item.value for item in status] if status else []
+    scoring_status_values = [item.value for item in scoring_status] if scoring_status else []
+
     query = db.query(TaskResult.id, TaskResult.data_id).filter(TaskResult.task_id == task_id)
-    if status is not None:
-        query = query.filter(TaskResult.status == status.value)
-    if scoring_status is not None:
-        query = query.filter(TaskResult.scoring_status == scoring_status.value)
+    if status_values:
+        query = query.filter(TaskResult.status.in_(status_values))
+    if scoring_status_values:
+        query = query.filter(TaskResult.scoring_status.in_(scoring_status_values))
 
     rows = query.order_by(TaskResult.id.asc()).all()
     return TaskResultSelectionResponse(
@@ -722,7 +1078,14 @@ def _run_evaluation_task(task_id: int, target_data_ids: Optional[list[int]] = No
         data_query = db.query(EvaluationData).filter(EvaluationData.dataset_id == task.dataset_id)
         if target_data_ids:
             data_query = data_query.filter(EvaluationData.id.in_(target_data_ids))
-        data_list = data_query.all()
+        try:
+            data_list = _prepare_task_results(db, task_id, task.dataset_id, target_data_ids)
+        except ValueError as exc:
+            task.status = TaskStatus.failed.value
+            task.completed_at = datetime.now()
+            db.commit()
+            logger.warning("评测任务初始化失败: task_id=%s detail=%s", task_id, str(exc))
+            return
         if not data_list:
             task.status = TaskStatus.completed.value
             task.completed_at = datetime.now()
@@ -749,35 +1112,126 @@ def _run_evaluation_task(task_id: int, target_data_ids: Optional[list[int]] = No
 
         data_ids = [data.id for data in data_list]
         has_failure = False
+        pending_data_ids = deque(data_ids)
+        active_workers: dict[int, dict] = {}
 
-        with ThreadPoolExecutor(max_workers=TASK_INFERENCE_BATCH_SIZE) as executor:
-            for batch_ids in _chunked(data_ids, TASK_INFERENCE_BATCH_SIZE):
-                futures = [
-                    executor.submit(
-                        _run_single_task_result,
-                        task_id,
-                        data_id,
-                        annotation_prompt,
-                        custom_tags,
-                        task.target_model,
-                        task.model_provider,
-                        _normalize_fps(task.fps or DEFAULT_VIDEO_FPS),
-                    )
-                    for data_id in batch_ids
-                ]
-                for future in as_completed(futures):
-                    try:
-                        succeeded = future.result()
-                    except Exception:
-                        logger.exception(
-                            "评测任务并发 worker 异常: task_id=%s provider=%s model=%s",
-                            task_id,
-                            task.model_provider,
-                            task.target_model,
-                        )
-                        succeeded = False
+        def start_worker(next_data_id: int):
+            parent_conn, child_conn = INFERENCE_PROCESS_CONTEXT.Pipe(duplex=False)
+            process = INFERENCE_PROCESS_CONTEXT.Process(
+                target=_run_single_task_result_process,
+                args=(
+                    child_conn,
+                    task_id,
+                    next_data_id,
+                    annotation_prompt,
+                    custom_tags,
+                    task.target_model,
+                    task.model_provider,
+                    _normalize_fps(task.fps or DEFAULT_VIDEO_FPS),
+                ),
+            )
+            process.start()
+            child_conn.close()
+            active_workers[next_data_id] = {
+                "process": process,
+                "conn": parent_conn,
+                "started_at": time.monotonic(),
+            }
+
+        try:
+            while pending_data_ids or active_workers:
+                while pending_data_ids and len(active_workers) < TASK_INFERENCE_BATCH_SIZE:
+                    start_worker(pending_data_ids.popleft())
+
+                if not active_workers:
+                    continue
+
+                now = time.monotonic()
+                timed_out_data_ids: list[int] = []
+
+                for data_id, meta in list(active_workers.items()):
+                    process = meta["process"]
+                    conn = meta["conn"]
+
+                    if process.is_alive():
+                        if now - meta["started_at"] > TASK_SINGLE_TIMEOUT_SECONDS:
+                            timed_out_data_ids.append(data_id)
+                            _terminate_process(process)
+                            _close_process_connection(conn)
+                            active_workers.pop(data_id, None)
+                        continue
+
+                    payload = None
+                    if conn.poll():
+                        try:
+                            payload = conn.recv()
+                        except EOFError:
+                            payload = None
+                    process.join(timeout=0.2)
+                    _close_process_connection(conn)
+                    active_workers.pop(data_id, None)
+
+                    succeeded = bool(payload and payload.get("success"))
                     if not succeeded:
                         has_failure = True
+
+                if timed_out_data_ids:
+                    has_failure = True
+                    timeout_message = f"单条任务执行超时（执行时间 >{TASK_SINGLE_TIMEOUT_SECONDS}s）"
+                    logger.error(
+                        "评测任务存在超时结果: task_id=%s timeout_count=%s provider=%s model=%s data_ids=%s",
+                        task_id,
+                        len(timed_out_data_ids),
+                        task.model_provider,
+                        task.target_model,
+                        timed_out_data_ids[:10],
+                    )
+                    _mark_selected_task_results_failed(
+                        db,
+                        task_id,
+                        timed_out_data_ids,
+                        timeout_message,
+                        statuses=[
+                            TaskResultStatus.pending.value,
+                            TaskResultStatus.running.value,
+                        ],
+                    )
+                    db.commit()
+                time.sleep(0.2)
+        finally:
+            for meta in active_workers.values():
+                _terminate_process(meta["process"])
+                _close_process_connection(meta["conn"])
+
+        pending_count = db.query(TaskResult).filter(
+            TaskResult.task_id == task_id,
+            TaskResult.status == TaskResultStatus.pending.value,
+        ).count()
+        if pending_count > 0:
+            has_failure = True
+            error_message = "任务执行中断，结果未开始执行"
+            logger.error(
+                "评测任务存在残留 pending 结果: task_id=%s pending_count=%s",
+                task_id,
+                pending_count,
+            )
+            _mark_pending_task_results_failed(db, task_id, error_message)
+            db.commit()
+
+        running_count = db.query(TaskResult).filter(
+            TaskResult.task_id == task_id,
+            TaskResult.status == TaskResultStatus.running.value,
+        ).count()
+        if running_count > 0:
+            has_failure = True
+            error_message = "任务执行超时，结果未完成"
+            logger.error(
+                "评测任务存在残留 running 结果: task_id=%s running_count=%s",
+                task_id,
+                running_count,
+            )
+            _mark_running_task_results_failed(db, task_id, error_message)
+            db.commit()
 
         task.status = TaskStatus.failed.value if has_failure else TaskStatus.completed.value
         task.completed_at = datetime.now()

@@ -6,18 +6,61 @@ import os
 import json
 import re
 import requests
+import urllib.request
 from PIL import Image
 from io import BytesIO
 
 from app.services.video_frames import DEFAULT_VIDEO_FPS, extract_video_frames
 
+DEBUG_TRACE_ENV_PATH = "/Users/bytedance/AI-IPC-Evaluation/ipc-eval-system/.dbg/task-25-timeout-trace.env"
+
+
+def _emit_timeout_trace(location: str, hypothesis_id: str, msg: str, data: dict):
+    #region debug-point trace-emit
+    debug_server_url = "http://127.0.0.1:7777/event"
+    session_id = "task-25-timeout-trace"
+    try:
+        with open(DEBUG_TRACE_ENV_PATH, "r", encoding="utf-8") as env_file:
+            for line in env_file:
+                line = line.strip()
+                if line.startswith("DEBUG_SERVER_URL="):
+                    debug_server_url = line.split("=", 1)[1]
+                elif line.startswith("DEBUG_SESSION_ID="):
+                    session_id = line.split("=", 1)[1]
+    except Exception:
+        return
+
+    payload = {
+        "sessionId": session_id,
+        "runId": "pre",
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "msg": msg,
+        "data": data,
+    }
+    try:
+        request = urllib.request.Request(
+            debug_server_url,
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(request, timeout=2).read()
+    except Exception:
+        pass
+    #endregion
+
 
 class ArkClient:
     def __init__(self):
         settings = get_settings()
-        self.client = Ark(api_key=settings.ark_api_key)
         self.base_url = settings.ark_base_url
         self.default_model = settings.ark_model
+        self.client = Ark(
+            api_key=settings.ark_api_key,
+            base_url=self.base_url,
+            timeout=settings.ark_timeout,
+            max_retries=settings.ark_max_retries,
+        )
 
     def extract_gif_frames(self, gif_url: str, max_frames: int = 5) -> list[str]:
         try:
@@ -143,6 +186,16 @@ class ArkClient:
         content: list[dict],
         model: Optional[str] = None
     ) -> dict[str, Any]:
+        _emit_timeout_trace(
+            "app/services/ark_client.py:annotate_with_usage:start",
+            "C",
+            "[DEBUG] ark request started",
+            {
+                "model": model or self.default_model,
+                "content_items": len(content),
+                "image_items": sum(1 for item in content if item.get("type") == "input_image"),
+            },
+        )
         response = self.client.responses.create(
             model=model or self.default_model,
             input=[
@@ -152,6 +205,14 @@ class ArkClient:
                 }
             ],
             thinking={"type":"disabled"}
+        )
+        _emit_timeout_trace(
+            "app/services/ark_client.py:annotate_with_usage:finished",
+            "C",
+            "[DEBUG] ark request finished",
+            {
+                "model": model or self.default_model,
+            },
         )
         text = ""
         for item in response.output:

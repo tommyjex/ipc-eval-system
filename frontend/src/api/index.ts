@@ -1,9 +1,10 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+export const buildEvaluationDataPreviewUrl = (dataId: number) => `${API_BASE_URL}/datasets/data/${dataId}/preview`;
 
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   body?: unknown;
-  params?: Record<string, string | number | undefined>;
+  params?: Record<string, string | number | Array<string | number> | undefined>;
 }
 
 class ApiClient {
@@ -14,12 +15,18 @@ class ApiClient {
     console.log('API Base URL:', this.baseUrl);
   }
 
-  private buildUrl(path: string, params?: Record<string, string | number | undefined>): string {
+  private buildUrl(path: string, params?: Record<string, string | number | Array<string | number> | undefined>): string {
     let urlStr = `${this.baseUrl}${path}`;
     if (params) {
       const searchParams = new URLSearchParams();
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== '') {
+        if (Array.isArray(value)) {
+          value.forEach((item) => {
+            if (item !== undefined && item !== '') {
+              searchParams.append(key, String(item));
+            }
+          });
+        } else if (value !== undefined && value !== '') {
           searchParams.append(key, String(value));
         }
       });
@@ -40,6 +47,7 @@ class ApiClient {
     try {
       const response = await fetch(url, {
         method,
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -50,6 +58,9 @@ class ApiClient {
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({ detail: '请求失败' }));
+        if (response.status === 401 && !path.startsWith('/auth/')) {
+          window.location.href = '/login';
+        }
         throw new Error(error.detail || `请求失败: ${response.status}`);
       }
 
@@ -67,7 +78,7 @@ class ApiClient {
     }
   }
 
-  async get<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
+  async get<T>(path: string, params?: Record<string, string | number | Array<string | number> | undefined>): Promise<T> {
     return this.request<T>(path, { params });
   }
 
@@ -85,6 +96,10 @@ class ApiClient {
 }
 
 export const api = new ApiClient(API_BASE_URL);
+
+export interface AuthUser {
+  username: string;
+}
 
 export type DatasetType = 'video' | 'image' | 'mixed';
 export type DatasetScene = 'video_retrieval' | 'smart_alert';
@@ -340,7 +355,7 @@ export interface PromptTemplateListResponse {
 }
 
 export const taskApi = {
-  list: (params?: { dataset_id?: number; status?: TaskStatus; sort_by?: 'avg_recall' | 'avg_accuracy'; sort_order?: 'asc' | 'desc'; page?: number; page_size?: number }) =>
+  list: (params?: { dataset_id?: number[]; model_provider?: ModelProvider[]; target_model?: string[]; status?: TaskStatus[]; sort_by?: 'avg_recall' | 'avg_accuracy'; sort_order?: 'asc' | 'desc'; page?: number; page_size?: number }) =>
     api.get<{ items: EvaluationTask[]; total: number }>('/tasks', params),
   get: (taskId: number) =>
     api.get<EvaluationTask>(`/tasks/${taskId}`),
@@ -356,10 +371,16 @@ export const taskApi = {
     api.post<{ message: string; task_id: number; scored_count: number; skipped_count: number; failed_count: number; model: string }>(`/tasks/${taskId}/score`, data || {}),
   getResults: (taskId: number, params?: { page?: number; page_size?: number }) =>
     api.get<{ items: TaskResult[]; total: number }>(`/tasks/${taskId}/results`, params),
-  getResultsDetail: (taskId: number, params?: { page?: number; page_size?: number; status?: TaskResultStatus; scoring_status?: TaskScoringStatus }) =>
+  getResultsDetail: (taskId: number, params?: { page?: number; page_size?: number; status?: TaskResultStatus[]; scoring_status?: TaskScoringStatus[] }) =>
     api.get<TaskResultDetailListResponse>(`/tasks/${taskId}/results/detail`, params),
-  getResultSelection: (taskId: number, params?: { status?: TaskResultStatus; scoring_status?: TaskScoringStatus }) =>
+  getResultSelection: (taskId: number, params?: { status?: TaskResultStatus[]; scoring_status?: TaskScoringStatus[] }) =>
     api.get<TaskResultSelectionResponse>(`/tasks/${taskId}/results/selection`, params),
+};
+
+export const authApi = {
+  login: (payload: { username: string; password: string }) => api.post<AuthUser>('/auth/login', payload),
+  logout: () => api.post<void>('/auth/logout', {}),
+  me: () => api.get<AuthUser>('/auth/me'),
 };
 
 export const scoringTemplateApi = {

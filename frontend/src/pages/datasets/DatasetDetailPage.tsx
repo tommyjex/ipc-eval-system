@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { datasetApi, evaluationDataApi, annotationApi } from '../../api';
+import { datasetApi, evaluationDataApi, annotationApi, buildEvaluationDataPreviewUrl } from '../../api';
 import type { Dataset, EvaluationData, DatasetType, DatasetScene, TOSFolder, TOSFile } from '../../api';
 import { FileUpload } from '../../components/upload/FileUpload';
 
@@ -201,6 +201,9 @@ export const DatasetDetailPage: React.FC = () => {
     }
   };
 
+  const getMediaPreviewUrl = (data: Pick<EvaluationData, 'id' | 'download_url'>) =>
+    data.id ? buildEvaluationDataPreviewUrl(data.id) : (data.download_url || '');
+
   const openPreview = async (data: EvaluationData) => {
     setPreviewData(data);
     setShowPreviewModal(true);
@@ -210,10 +213,10 @@ export const DatasetDetailPage: React.FC = () => {
       setGifPreviewUrl(null);
     }
 
-    if (data.file_type.toLowerCase() === 'gif' && data.download_url) {
+    if (data.file_type.toLowerCase() === 'gif') {
       setGifPreviewLoading(true);
       try {
-        const response = await fetch(data.download_url);
+        const response = await fetch(getMediaPreviewUrl(data));
         const blob = await response.blob();
         const objectUrl = URL.createObjectURL(new Blob([blob], { type: 'image/gif' }));
         setGifPreviewUrl(objectUrl);
@@ -710,9 +713,9 @@ export const DatasetDetailPage: React.FC = () => {
                           onClick={() => openPreview(data)}
                         >
                           {isVideo(data.file_type) ? (
-                            <video src={data.download_url || ''} className="max-w-full max-h-full object-contain" />
+                            <video src={getMediaPreviewUrl(data)} className="max-w-full max-h-full object-contain" />
                           ) : (
-                            <img src={data.download_url || ''} alt={data.file_name} className="max-w-full max-h-full object-contain" />
+                            <img src={getMediaPreviewUrl(data)} alt={data.file_name} className="max-w-full max-h-full object-contain" />
                           )}
                         </div>
                       </td>
@@ -851,20 +854,20 @@ export const DatasetDetailPage: React.FC = () => {
             </div>
             <div className="p-4 flex items-center justify-center" style={{ maxHeight: '70vh' }}>
               {isVideo(previewData.file_type) ? (
-                <video src={previewData.download_url || ''} className="max-w-full max-h-full" controls />
+                <video src={getMediaPreviewUrl(previewData)} className="max-w-full max-h-full" controls />
               ) : previewData.file_type.toLowerCase() === 'gif' ? (
                 gifPreviewLoading ? (
                   <div className="text-sm text-gray-500">GIF 加载中...</div>
                 ) : (
                   <img
-                    src={gifPreviewUrl || previewData.download_url || ''}
+                    src={gifPreviewUrl || getMediaPreviewUrl(previewData)}
                     alt={previewData.file_name}
                     className="max-w-full max-h-full object-contain"
                   />
                 )
               ) : (
                 <img 
-                  src={previewData.download_url || ''} 
+                  src={getMediaPreviewUrl(previewData)} 
                   alt={previewData.file_name} 
                   className="max-w-full max-h-full object-contain" 
                 />

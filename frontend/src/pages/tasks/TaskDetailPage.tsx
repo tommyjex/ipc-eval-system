@@ -1,11 +1,27 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { taskApi, datasetApi, scoringTemplateApi, promptTemplateApi } from '../../api';
+import { taskApi, datasetApi, scoringTemplateApi, promptTemplateApi, buildEvaluationDataPreviewUrl } from '../../api';
 import type { EvaluationTask, TaskResultDetail, TaskStatus, TaskScoringStatus, TaskResultStatus, DatasetScene, ScoringTemplate, PromptTemplate } from '../../api';
 
 const getRecentTemplateStorageKey = (scene: DatasetScene) => `recent-scoring-template:${scene}`;
 const getRecentPromptTemplateStorageKey = (scene: DatasetScene) => `recent-prompt-template:${scene}`;
 const normalizeFps = (value: number) => Math.max(0.01, Math.min(30, Number(value.toFixed(2))));
+const SMART_SCORE_DEFER_MS = 1500;
+const SMART_SCORE_POLL_MS = 3000;
+type MultiSelectOption<T extends string> = { value: T; label: string };
+
+const RESULT_STATUS_OPTIONS: MultiSelectOption<TaskResultStatus>[] = [
+  { value: 'pending', label: '待运行' },
+  { value: 'running', label: '运行中' },
+  { value: 'completed', label: '已完成' },
+  { value: 'failed', label: '失败' },
+];
+const SCORING_STATUS_OPTIONS: MultiSelectOption<TaskScoringStatus>[] = [
+  { value: 'not_scored', label: '未评分' },
+  { value: 'scoring', label: '评分中' },
+  { value: 'scored', label: '已评分' },
+  { value: 'score_failed', label: '评分失败' },
+];
 const formatNullableNumber = (value: number | null | undefined, digits = 1, suffix = '') =>
   (typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(digits)}${suffix}` : '-');
 const normalizeResultDetail = (result: Partial<TaskResultDetail>): TaskResultDetail => ({
@@ -34,6 +50,119 @@ const normalizeResultDetail = (result: Partial<TaskResultDetail>): TaskResultDet
   download_url: result.download_url ?? null,
   ground_truth: result.ground_truth ?? null,
 });
+const getTaskResultPreviewUrl = (result: Pick<TaskResultDetail, 'data_id' | 'download_url' | 'file_type'>) =>
+  buildEvaluationDataPreviewUrl(result.data_id);
+
+const MultiSelectDropdown = <T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: MultiSelectOption<T>[];
+  value: T[];
+  onChange: (next: T[]) => void;
+}) => {
+  const [open, setOpen] = useState(false);
+  const [draftValue, setDraftValue] = useState<T[]>(value);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setDraftValue(value);
+    }
+  }, [value, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!panelRef.current?.contains(event.target as Node)) {
+        setDraftValue(value);
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [open, value]);
+
+  const toggleOption = (optionValue: T) => {
+    if (draftValue.includes(optionValue)) {
+      setDraftValue(draftValue.filter((item) => item !== optionValue));
+    } else {
+      setDraftValue([...draftValue, optionValue]);
+    }
+  };
+  const hasSelectedValue = value.length > 0;
+
+  return (
+    <div ref={panelRef} className="relative min-w-[160px]">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className={`inline-flex items-center text-xs font-normal ${
+          hasSelectedValue ? 'text-orange-500 hover:text-orange-600' : 'text-gray-400 hover:text-gray-600'
+        }`}
+        aria-label={`筛选${label}`}
+      >
+        <span>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-2 w-56 rounded-md border bg-white p-2 shadow-lg">
+          <div className="mb-2 flex items-center justify-between border-b pb-2">
+            <span className="text-xs font-medium text-gray-700">{label}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setDraftValue([]);
+                onChange([]);
+                setOpen(false);
+              }}
+              className="text-xs text-blue-600 hover:text-blue-800"
+            >
+              清空
+            </button>
+          </div>
+          <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
+            {options.map((option) => (
+              <label key={option.value} className="flex cursor-pointer items-center gap-2 text-xs text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={draftValue.includes(option.value)}
+                  onChange={() => toggleOption(option.value)}
+                  className="rounded border-gray-300"
+                />
+                <span>{option.label}</span>
+              </label>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center justify-end gap-2 border-t pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setDraftValue(value);
+                setOpen(false);
+              }}
+              className="rounded border px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onChange(draftValue);
+                setOpen(false);
+              }}
+              className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700"
+            >
+              确定
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const TaskDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -61,8 +190,8 @@ export const TaskDetailPage: React.FC = () => {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [pageSize, setPageSize] = useState<50 | 100>(50);
-  const [resultStatusFilter, setResultStatusFilter] = useState<'all' | TaskResultStatus>('all');
-  const [scoringStatusFilter, setScoringStatusFilter] = useState<'all' | TaskScoringStatus>('all');
+  const [resultStatusFilter, setResultStatusFilter] = useState<TaskResultStatus[]>([]);
+  const [scoringStatusFilter, setScoringStatusFilter] = useState<TaskScoringStatus[]>([]);
   const [avgRecall, setAvgRecall] = useState<number | null>(null);
   const [avgAccuracy, setAvgAccuracy] = useState<number | null>(null);
   const [avgInputTokens, setAvgInputTokens] = useState<number | null>(null);
@@ -72,6 +201,8 @@ export const TaskDetailPage: React.FC = () => {
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [selectedPromptTemplateId, setSelectedPromptTemplateId] = useState('');
   const pollingRef = useRef(false);
+
+  const delay = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
   const fetchTaskInfo = async (options?: { silent?: boolean }) => {
     if (!id) return;
@@ -138,8 +269,8 @@ export const TaskDetailPage: React.FC = () => {
       const resultsRes = await taskApi.getResultsDetail(parseInt(id), {
         page,
         page_size: pageSize,
-        status: resultStatusFilter === 'all' ? undefined : resultStatusFilter,
-        scoring_status: scoringStatusFilter === 'all' ? undefined : scoringStatusFilter,
+        status: resultStatusFilter.length > 0 ? resultStatusFilter : undefined,
+        scoring_status: scoringStatusFilter.length > 0 ? scoringStatusFilter : undefined,
       });
       const detailItems = Array.isArray(resultsRes)
         ? resultsRes
@@ -161,6 +292,64 @@ export const TaskDetailPage: React.FC = () => {
         setResultsLoading(false);
       }
     }
+  };
+
+  const getScoringTotals = async (taskId: number) => {
+    const [notScored, scoringInProgress, scored, scoreFailed] = await Promise.all([
+      taskApi.getResultSelection(taskId, { scoring_status: ['not_scored'] }),
+      taskApi.getResultSelection(taskId, { scoring_status: ['scoring'] }),
+      taskApi.getResultSelection(taskId, { scoring_status: ['scored'] }),
+      taskApi.getResultSelection(taskId, { scoring_status: ['score_failed'] }),
+    ]);
+    return {
+      not_scored: notScored.total,
+      scoring: scoringInProgress.total,
+      scored: scored.total,
+      score_failed: scoreFailed.total,
+    };
+  };
+
+  const formatSmartScoreSummary = (result: { scored_count: number; failed_count: number; skipped_count: number }) => {
+    if (result.scored_count > 0) {
+      return `智能评分已完成，成功评分 ${result.scored_count} 条${result.failed_count > 0 ? `，失败 ${result.failed_count} 条` : ''}`;
+    }
+    if (result.failed_count > 0) {
+      return `智能评分执行完成，但失败 ${result.failed_count} 条`;
+    }
+    return `没有可评分结果，已跳过 ${result.skipped_count} 条`;
+  };
+
+  const formatSmartScoreDiffSummary = (
+    before: { not_scored: number; scoring: number; scored: number; score_failed: number },
+    after: { not_scored: number; scoring: number; scored: number; score_failed: number },
+  ) => {
+    const scoredDelta = Math.max(0, after.scored - before.scored);
+    const failedDelta = Math.max(0, after.score_failed - before.score_failed);
+    const remaining = after.not_scored;
+    if (scoredDelta > 0) {
+      return `智能评分已完成，新增评分 ${scoredDelta} 条${failedDelta > 0 ? `，新增失败 ${failedDelta} 条` : ''}${remaining > 0 ? `，剩余未评分 ${remaining} 条` : ''}`;
+    }
+    if (failedDelta > 0) {
+      return `智能评分执行完成，新增失败 ${failedDelta} 条${remaining > 0 ? `，剩余未评分 ${remaining} 条` : ''}`;
+    }
+    return remaining > 0 ? `智能评分已结束，当前仍有 ${remaining} 条未评分` : '智能评分已完成';
+  };
+
+  const waitForScoringToSettle = async (
+    taskId: number,
+    beforeTotals: { not_scored: number; scoring: number; scored: number; score_failed: number },
+  ) => {
+    let latestTotals = beforeTotals;
+    for (let i = 0; i < 40; i += 1) {
+      await delay(SMART_SCORE_POLL_MS);
+      await fetchTaskInfo({ silent: true });
+      await fetchResults({ silent: true });
+      latestTotals = await getScoringTotals(taskId);
+      if (latestTotals.scoring === 0) {
+        return latestTotals;
+      }
+    }
+    return latestTotals;
   };
 
   useEffect(() => {
@@ -197,13 +386,13 @@ export const TaskDetailPage: React.FC = () => {
   }, [saveSuccess]);
 
   useEffect(() => {
-    if (task?.status !== 'running') return;
+    if (task?.status !== 'running' && !scoring) return;
     const timer = window.setInterval(() => {
       fetchTaskInfo({ silent: true });
       fetchResults({ silent: true });
-    }, 3000);
+    }, SMART_SCORE_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [task?.status, id, page, pageSize, resultStatusFilter, scoringStatusFilter]);
+  }, [task?.status, scoring, id, page, pageSize, resultStatusFilter, scoringStatusFilter]);
 
   useEffect(() => {
     if (!editing || !datasetScene) {
@@ -247,15 +436,17 @@ export const TaskDetailPage: React.FC = () => {
     if (!id) return;
     try {
       await taskApi.run(parseInt(id), dataIds && dataIds.length > 0 ? { data_ids: dataIds } : undefined);
-      await fetchTaskInfo({ silent: true });
-      await fetchResults({ silent: true });
+      setTask((prev) => (prev ? { ...prev, status: 'running' } : prev));
+      setSaveSuccess('任务已启动，正在刷新结果列表');
+      void fetchTaskInfo({ silent: true });
+      void fetchResults({ silent: true });
     } catch (err) {
       alert('启动失败: ' + (err instanceof Error ? err.message : '未知错误'));
     }
   };
 
   const handleRunFiltered = async () => {
-    if (!id || resultStatusFilter === 'all') return;
+    if (!id || resultStatusFilter.length === 0) return;
     try {
       const selection = await taskApi.getResultSelection(parseInt(id), { status: resultStatusFilter });
       if (selection.data_ids.length === 0) {
@@ -314,16 +505,43 @@ export const TaskDetailPage: React.FC = () => {
   const handleSmartScore = async (resultIds?: number[]) => {
     if (!id) return;
     setScoring(true);
+    const taskId = parseInt(id);
     try {
-      const result = await taskApi.score(parseInt(id), resultIds && resultIds.length > 0 ? { result_ids: resultIds } : undefined);
-      await fetchTaskInfo();
-      await fetchResults({ silent: true });
-      if (result.scored_count > 0) {
-        setSaveSuccess(`智能评分已完成，成功评分 ${result.scored_count} 条${result.failed_count > 0 ? `，失败 ${result.failed_count} 条` : ''}`);
-      } else if (result.failed_count > 0) {
-        setSaveSuccess(`智能评分执行完成，但失败 ${result.failed_count} 条`);
-      } else {
-        setSaveSuccess(`没有可评分结果，已跳过 ${result.skipped_count} 条`);
+      const beforeTotals = await getScoringTotals(taskId);
+      const scorePromise = taskApi.score(taskId, resultIds && resultIds.length > 0 ? { result_ids: resultIds } : undefined);
+      const raceResult = await Promise.race([
+        scorePromise.then((result) => ({ type: 'resolved' as const, result })),
+        delay(SMART_SCORE_DEFER_MS).then(() => ({ type: 'deferred' as const })),
+      ]);
+
+      if (raceResult.type === 'resolved') {
+        await fetchTaskInfo();
+        await fetchResults({ silent: true });
+        setSaveSuccess(formatSmartScoreSummary(raceResult.result));
+        return;
+      }
+
+      setSaveSuccess('智能评分已发起，后台处理中，页面将自动刷新结果');
+
+      try {
+        const result = await scorePromise;
+        await fetchTaskInfo({ silent: true });
+        await fetchResults({ silent: true });
+        setSaveSuccess(formatSmartScoreSummary(result));
+      } catch (err) {
+        const currentTotals = await getScoringTotals(taskId);
+        const scoringLikelyStarted =
+          currentTotals.scoring > 0 ||
+          currentTotals.scored > beforeTotals.scored ||
+          currentTotals.score_failed > beforeTotals.score_failed ||
+          currentTotals.not_scored < beforeTotals.not_scored;
+
+        if (!scoringLikelyStarted) {
+          throw err;
+        }
+
+        const settledTotals = await waitForScoringToSettle(taskId, currentTotals);
+        setSaveSuccess(formatSmartScoreDiffSummary(beforeTotals, settledTotals));
       }
     } catch (err) {
       alert('智能评分失败: ' + (err instanceof Error ? err.message : '未知错误'));
@@ -333,7 +551,7 @@ export const TaskDetailPage: React.FC = () => {
   };
 
   const handleSmartScoreFiltered = async () => {
-    if (!id || scoringStatusFilter === 'all') return;
+    if (!id || scoringStatusFilter.length === 0) return;
     setScoring(true);
     try {
       const selection = await taskApi.getResultSelection(parseInt(id), { scoring_status: scoringStatusFilter });
@@ -341,16 +559,7 @@ export const TaskDetailPage: React.FC = () => {
         setSaveSuccess('当前筛选条件下没有可评分结果');
         return;
       }
-      const result = await taskApi.score(parseInt(id), { result_ids: selection.result_ids });
-      await fetchTaskInfo();
-      await fetchResults({ silent: true });
-      if (result.scored_count > 0) {
-        setSaveSuccess(`智能评分已完成，成功评分 ${result.scored_count} 条${result.failed_count > 0 ? `，失败 ${result.failed_count} 条` : ''}`);
-      } else if (result.failed_count > 0) {
-        setSaveSuccess(`智能评分执行完成，但失败 ${result.failed_count} 条`);
-      } else {
-        setSaveSuccess(`没有可评分结果，已跳过 ${result.skipped_count} 条`);
-      }
+      await handleSmartScore(selection.result_ids);
     } catch (err) {
       alert('筛选评分失败: ' + (err instanceof Error ? err.message : '未知错误'));
     } finally {
@@ -376,6 +585,26 @@ export const TaskDetailPage: React.FC = () => {
       failed: 'bg-red-100 text-red-800',
     };
     const labels: Record<TaskStatus, string> = {
+      pending: '待运行',
+      running: '运行中',
+      completed: '已完成',
+      failed: '失败',
+    };
+    return (
+      <span className={`px-2 py-1 rounded text-xs ${styles[status]}`}>
+        {labels[status]}
+      </span>
+    );
+  };
+
+  const getResultStatusBadge = (status: TaskResultStatus) => {
+    const styles: Record<TaskResultStatus, string> = {
+      pending: 'bg-gray-100 text-gray-800',
+      running: 'bg-blue-100 text-blue-800',
+      completed: 'bg-green-100 text-green-800',
+      failed: 'bg-red-100 text-red-800',
+    };
+    const labels: Record<TaskResultStatus, string> = {
       pending: '待运行',
       running: '运行中',
       completed: '已完成',
@@ -722,47 +951,7 @@ export const TaskDetailPage: React.FC = () => {
               {task.status === 'running' && (
                 <span className="text-sm text-blue-600">运行中，结果每 3 秒自动刷新</span>
               )}
-              <div className="flex items-center gap-2">
-                <label htmlFor="result-status-filter" className="text-sm text-gray-600">
-                  任务运行状态
-                </label>
-                <select
-                  id="result-status-filter"
-                  value={resultStatusFilter}
-                  onChange={(e) => {
-                    setPage(1);
-                    setResultStatusFilter(e.target.value as 'all' | TaskResultStatus);
-                  }}
-                  className="rounded border px-3 py-2 text-sm"
-                >
-                  <option value="all">全部</option>
-                  <option value="pending">待运行</option>
-                  <option value="running">运行中</option>
-                  <option value="completed">已完成</option>
-                  <option value="failed">失败</option>
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                <label htmlFor="scoring-status-filter" className="text-sm text-gray-600">
-                  评分状态
-                </label>
-                <select
-                  id="scoring-status-filter"
-                  value={scoringStatusFilter}
-                  onChange={(e) => {
-                    setPage(1);
-                    setScoringStatusFilter(e.target.value as 'all' | TaskScoringStatus);
-                  }}
-                  className="rounded border px-3 py-2 text-sm"
-                >
-                  <option value="all">全部</option>
-                  <option value="not_scored">未评分</option>
-                  <option value="scoring">评分中</option>
-                  <option value="scored">已评分</option>
-                  <option value="score_failed">评分失败</option>
-                </select>
-              </div>
-              {resultStatusFilter !== 'all' && (
+              {resultStatusFilter.length > 0 && (
                 <button
                   type="button"
                   onClick={handleRunFiltered}
@@ -772,7 +961,7 @@ export const TaskDetailPage: React.FC = () => {
                   重新运行筛选结果
                 </button>
               )}
-              {scoringStatusFilter !== 'all' && (
+              {scoringStatusFilter.length > 0 && (
                 <button
                   type="button"
                   onClick={handleSmartScoreFiltered}
@@ -794,30 +983,59 @@ export const TaskDetailPage: React.FC = () => {
           </div>
         </div>
         
-        {results.length === 0 ? (
-          <div className="p-10 text-center text-gray-500">
-            {task.status === 'pending' ? '请运行任务查看评测结果' : '当前筛选条件下暂无结果'}
-          </div>
-        ) : (
-          <>
-            <table className="w-full">
-              <thead className="bg-gray-50">
+        <div className="overflow-x-auto">
+          <table className="min-w-[1500px] w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left">对象名称</th>
+                <th className="px-4 py-3 text-left">预览</th>
+                <th className="px-4 py-3 text-left">标注结果</th>
+                <th className="px-4 py-3 text-left">
+                  <div className="flex min-w-[140px] items-center gap-2 whitespace-nowrap">
+                    <span className="whitespace-nowrap">评测状态</span>
+                    <MultiSelectDropdown
+                      label="评测状态"
+                      options={RESULT_STATUS_OPTIONS}
+                      value={resultStatusFilter}
+                      onChange={(next) => {
+                        setPage(1);
+                        setResultStatusFilter(next);
+                      }}
+                    />
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-left">模型输出</th>
+                <th className="px-4 py-3 text-left">
+                  <div className="flex min-w-[140px] items-center gap-2 whitespace-nowrap">
+                    <span className="whitespace-nowrap">评分状态</span>
+                    <MultiSelectDropdown
+                      label="评分状态"
+                      options={SCORING_STATUS_OPTIONS}
+                      value={scoringStatusFilter}
+                      onChange={(next) => {
+                        setPage(1);
+                        setScoringStatusFilter(next);
+                      }}
+                    />
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-left">输入 Tokens</th>
+                <th className="px-4 py-3 text-left">输出 Tokens</th>
+                <th className="px-4 py-3 text-left">召回率</th>
+                <th className="px-4 py-3 text-left">准确率</th>
+                <th className="px-4 py-3 text-left">评分理由</th>
+              </tr>
+            </thead>
+            <tbody>
+              {results.length === 0 ? (
                 <tr>
-                  <th className="px-4 py-3 text-left">对象名称</th>
-                  <th className="px-4 py-3 text-left">预览</th>
-                  <th className="px-4 py-3 text-left">标注结果</th>
-                  <th className="px-4 py-3 text-left">模型输出</th>
-                  <th className="px-4 py-3 text-left">评分状态</th>
-                  <th className="px-4 py-3 text-left">输入 Tokens</th>
-                  <th className="px-4 py-3 text-left">输出 Tokens</th>
-                  <th className="px-4 py-3 text-left">召回率</th>
-                  <th className="px-4 py-3 text-left">准确率</th>
-                  <th className="px-4 py-3 text-left">评分理由</th>
+                  <td colSpan={11} className="p-10 text-center text-gray-500">
+                    {task.status === 'pending' ? '请运行任务查看评测结果' : '当前筛选条件下暂无结果'}
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {results.map((result) => (
-                  <tr key={result.id} className="border-t hover:bg-gray-50">
+              ) : (
+                results.map((result) => (
+                    <tr key={result.id} className="border-t hover:bg-gray-50">
                     <td className="px-4 py-3">{result.file_name}</td>
                     <td className="px-4 py-3">
                       {result.download_url && (
@@ -832,6 +1050,16 @@ export const TaskDetailPage: React.FC = () => {
                     </td>
                     <td className="px-4 py-3">
                       {renderHoverText(result.ground_truth)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="space-y-1">
+                        {getResultStatusBadge(result.status)}
+                        {result.status === 'failed' && result.error_message && (
+                          <div className="max-w-xs">
+                            {renderHoverText(result.error_message)}
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       {renderHoverText(result.model_output || (result.status === 'running' ? '评测中...' : null))}
@@ -870,11 +1098,13 @@ export const TaskDetailPage: React.FC = () => {
                       {renderHoverText(result.score_reason)}
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
 
-            <div className="flex justify-between items-center p-4 border-t">
+        <div className="flex justify-between items-center p-4 border-t">
               <div className="flex items-center space-x-2">
                 <span className="text-gray-500 text-sm">共 {total} 条</span>
                 <select
@@ -906,11 +1136,9 @@ export const TaskDetailPage: React.FC = () => {
                 </button>
               </div>
             </div>
-          </>
-        )}
       </div>
 
-      {showPreview && previewData && previewData.download_url && (
+      {showPreview && previewData && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={closePreview}>
           <div className="bg-white rounded-lg shadow-lg max-w-4xl max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="p-4 border-b flex justify-between items-center">
@@ -919,9 +1147,9 @@ export const TaskDetailPage: React.FC = () => {
             </div>
             <div className="p-4 flex items-center justify-center" style={{ maxHeight: '70vh' }}>
               {isVideo(previewData.file_type) ? (
-                <video src={previewData.download_url} className="max-w-full max-h-full" controls />
+                <video src={getTaskResultPreviewUrl(previewData)} className="max-w-full max-h-full" controls />
               ) : (
-                <img src={previewData.download_url} alt={previewData.file_name} className="max-w-full max-h-full object-contain" />
+                <img src={getTaskResultPreviewUrl(previewData)} alt={previewData.file_name} className="max-w-full max-h-full object-contain" />
               )}
             </div>
           </div>

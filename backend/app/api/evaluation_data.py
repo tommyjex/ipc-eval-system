@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from typing import Optional
+import requests
 
 from app.core.database import get_db
 from app.core.config import get_settings
@@ -41,6 +43,81 @@ def is_video_file(ext: str) -> bool:
 
 def is_image_file(ext: str) -> bool:
     return ext in IMAGE_EXTENSIONS
+
+
+def _stream_remote_response(response: requests.Response):
+    try:
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            if chunk:
+                yield chunk
+    finally:
+        response.close()
+
+
+@router.get("/data/{data_id}/preview", summary="代理预览媒体")
+def proxy_data_preview(data_id: int, request: Request, db: Session = Depends(get_db)):
+    data = db.query(EvaluationData).filter(EvaluationData.id == data_id).first()
+    if not data:
+        raise HTTPException(status_code=404, detail="评测数据不存在")
+
+    file_type = (data.file_type or "").lower()
+    if file_type not in ALL_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="当前文件类型不支持代理预览")
+
+    tos_client = get_tos_client()
+    download_url = tos_client.get_download_url(data.tos_key)
+
+    upstream_headers = {}
+    range_header = request.headers.get("range")
+    if range_header:
+        upstream_headers["Range"] = range_header
+
+    try:
+        upstream_response = requests.get(
+            download_url,
+            stream=True,
+            timeout=120,
+            headers=upstream_headers,
+        )
+        if upstream_response.status_code >= 400:
+            raise HTTPException(status_code=502, detail="对象预览代理失败")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"对象预览代理失败: {exc}") from exc
+
+    media_type = upstream_response.headers.get("Content-Type") or {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "gif": "image/gif",
+        "bmp": "image/bmp",
+        "webp": "image/webp",
+        "mp4": "video/mp4",
+        "avi": "video/x-msvideo",
+        "mov": "video/quicktime",
+        "mkv": "video/x-matroska",
+        "flv": "video/x-flv",
+        "wmv": "video/x-ms-wmv",
+    }.get(file_type, "application/octet-stream")
+    headers = {
+        "Cache-Control": "private, max-age=60",
+        "Accept-Ranges": upstream_response.headers.get("Accept-Ranges", "bytes"),
+    }
+    for header_name in ["Content-Length", "Content-Range"]:
+        header_value = upstream_response.headers.get(header_name)
+        if header_value:
+            headers[header_name] = header_value
+
+    try:
+        return StreamingResponse(
+            _stream_remote_response(upstream_response),
+            status_code=upstream_response.status_code,
+            media_type=media_type,
+            headers=headers,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"对象预览代理失败: {exc}") from exc
 
 
 @router.post(
