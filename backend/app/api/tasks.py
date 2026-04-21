@@ -4,13 +4,11 @@ from sqlalchemy import func
 from typing import Optional
 import asyncio
 from collections import deque
-import json
 import logging
 import multiprocessing as mp
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 import time
-import urllib.request
 
 from app.core.config import get_settings
 from app.core.database import get_db, SessionLocal
@@ -42,42 +40,6 @@ TASK_SCORING_BATCH_SIZE = get_settings().task_scoring_batch_size
 TASK_SINGLE_TIMEOUT_SECONDS = get_settings().task_single_timeout_seconds
 INFERENCE_PROCESS_CONTEXT = mp.get_context("spawn")
 logger = logging.getLogger(__name__)
-DEBUG_TRACE_ENV_PATH = "/Users/bytedance/AI-IPC-Evaluation/ipc-eval-system/.dbg/task-25-timeout-trace.env"
-
-
-def _emit_timeout_trace(location: str, hypothesis_id: str, msg: str, data: dict):
-    #region debug-point trace-emit
-    debug_server_url = "http://127.0.0.1:7777/event"
-    session_id = "task-25-timeout-trace"
-    try:
-        with open(DEBUG_TRACE_ENV_PATH, "r", encoding="utf-8") as env_file:
-            for line in env_file:
-                line = line.strip()
-                if line.startswith("DEBUG_SERVER_URL="):
-                    debug_server_url = line.split("=", 1)[1]
-                elif line.startswith("DEBUG_SESSION_ID="):
-                    session_id = line.split("=", 1)[1]
-    except Exception:
-        return
-
-    payload = {
-        "sessionId": session_id,
-        "runId": "pre",
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "msg": msg,
-        "data": data,
-    }
-    try:
-        request = urllib.request.Request(
-            debug_server_url,
-            data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
-        )
-        urllib.request.urlopen(request, timeout=2).read()
-    except Exception:
-        pass
-    #endregion
 
 
 def _normalize_fps(value: float) -> float:
@@ -425,18 +387,6 @@ def _run_single_task_result(
             tos_client = get_tos_client()
             download_url = tos_client.get_download_url(data.tos_key)
             is_gif = data.file_type.lower() == "gif"
-            _emit_timeout_trace(
-                "app/api/tasks.py:_run_single_task_result:inference-start",
-                "A",
-                "[DEBUG] start single result inference",
-                {
-                    "task_id": task_id,
-                    "data_id": data_id,
-                    "file_name": data.file_name,
-                    "file_type": data.file_type,
-                    "is_gif": is_gif,
-                },
-            )
 
             if is_gif:
                 inference_result = inference_client.annotate_gif_with_usage(
@@ -447,18 +397,6 @@ def _run_single_task_result(
                     fps=fps,
                 )
             else:
-                _emit_timeout_trace(
-                    "app/api/tasks.py:_run_single_task_result:build-content-start",
-                    "A",
-                    "[DEBUG] start build video content",
-                    {
-                        "task_id": task_id,
-                        "data_id": data_id,
-                        "file_name": data.file_name,
-                        "file_type": data.file_type,
-                        "download_url": download_url,
-                    },
-                )
                 content = inference_client.build_annotation_content(
                     download_url,
                     data.file_type,
@@ -466,39 +404,7 @@ def _run_single_task_result(
                     custom_tags,
                     fps=fps,
                 )
-                _emit_timeout_trace(
-                    "app/api/tasks.py:_run_single_task_result:build-content-finished",
-                    "B",
-                    "[DEBUG] finished build video content",
-                    {
-                        "task_id": task_id,
-                        "data_id": data_id,
-                        "file_name": data.file_name,
-                        "content_items": len(content),
-                    },
-                )
-                _emit_timeout_trace(
-                    "app/api/tasks.py:_run_single_task_result:annotate-start",
-                    "C",
-                    "[DEBUG] start ark annotate",
-                    {
-                        "task_id": task_id,
-                        "data_id": data_id,
-                        "file_name": data.file_name,
-                        "content_items": len(content),
-                    },
-                )
                 inference_result = inference_client.annotate_with_usage(content, target_model)
-                _emit_timeout_trace(
-                    "app/api/tasks.py:_run_single_task_result:annotate-finished",
-                    "C",
-                    "[DEBUG] finished ark annotate",
-                    {
-                        "task_id": task_id,
-                        "data_id": data_id,
-                        "file_name": data.file_name,
-                    },
-                )
 
             db.refresh(result)
             if result.status != TaskResultStatus.running.value:
@@ -1235,6 +1141,17 @@ def _run_evaluation_task(task_id: int, target_data_ids: Optional[list[int]] = No
 
         task.status = TaskStatus.failed.value if has_failure else TaskStatus.completed.value
         task.completed_at = datetime.now()
+        db.commit()
+    except Exception as exc:
+        logger.exception("评测任务主调度异常退出: task_id=%s", task_id)
+        db.rollback()
+        error_message = f"评测任务主调度异常退出: {type(exc).__name__}: {exc}"
+        _mark_pending_task_results_failed(db, task_id, error_message)
+        _mark_running_task_results_failed(db, task_id, error_message)
+        task = db.query(EvaluationTask).filter(EvaluationTask.id == task_id).first()
+        if task:
+            task.status = TaskStatus.failed.value
+            task.completed_at = datetime.now()
         db.commit()
     finally:
         db.close()

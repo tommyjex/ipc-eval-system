@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     port: int = 3000
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175"]
     admin_username: str = "admin"
-    admin_password: str = "AihymTs4X*7z*QGp"
+    admin_password: str
 
     tos_access_key: str 
     tos_secret_key: str 
@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     db_host: str = "mysqlf4d4d1585fb1.rds.ivolces.com"
     db_port: int = 3306
     db_user: str = "xujianhua"
-    db_password: str = "SHanghai1@"
+    db_password: str
     db_name: str = "ipc-eval"
 
     @property

@@ -9,7 +9,7 @@ import { TaskDetailPage } from './pages/tasks/TaskDetailPage';
 import { TaskComparePage } from './pages/tasks/TaskComparePage';
 import { LoginPage } from './pages/LoginPage';
 
-const HOME_HERO_IMAGE = 'https://xujianhua-utils.tos-cn-beijing.volces.com/AI-IPC/frontend-assets/home_hero.png';
+const HOME_HERO_IMAGE = 'https://xujianhua-utils.tos-cn-beijing.volces.com/AI-IPC/frontend-assets/home_hero_v2.png';
 const PLATFORM_LOGO = 'https://xujianhua-utils.tos-cn-beijing.volces.com/AI-IPC/frontend-assets/visual_intelligence_logo.png';
 const HOME_NAV_LINKS = [
   {
