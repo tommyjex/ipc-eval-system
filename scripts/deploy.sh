@@ -7,6 +7,9 @@ BACKEND_DIR="$ROOT_DIR/backend"
 FRONTEND_DIR="$ROOT_DIR/frontend"
 WEB_ROOT="/var/www/ipc-eval-system"
 SERVICE_NAME="ipc-eval-backend"
+HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3001/api/health}"
+HEALTH_CHECK_RETRIES="${HEALTH_CHECK_RETRIES:-30}"
+HEALTH_CHECK_INTERVAL="${HEALTH_CHECK_INTERVAL:-1}"
 
 INSTALL_BACKEND_DEPS="${INSTALL_BACKEND_DEPS:-1}"
 INSTALL_FRONTEND_DEPS="${INSTALL_FRONTEND_DEPS:-1}"
@@ -70,6 +73,20 @@ echo "==> Checking backend service status"
 sudo systemctl --no-pager --full status "$SERVICE_NAME" || true
 
 echo "==> Health check"
-curl --fail --silent --show-error http://127.0.0.1:3001/api/health || true
+health_ok=0
+for ((i=1; i<=HEALTH_CHECK_RETRIES; i++)); do
+  if curl --fail --silent --show-error "$HEALTH_URL" >/dev/null; then
+    health_ok=1
+    echo "Backend health check passed on attempt $i"
+    break
+  fi
+  echo "Health check attempt $i/$HEALTH_CHECK_RETRIES failed, retrying in ${HEALTH_CHECK_INTERVAL}s..."
+  sleep "$HEALTH_CHECK_INTERVAL"
+done
+
+if [[ "$health_ok" != "1" ]]; then
+  echo "Backend health check failed after $HEALTH_CHECK_RETRIES attempts: $HEALTH_URL"
+  exit 1
+fi
 
 echo "==> Deploy completed"
