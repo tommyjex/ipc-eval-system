@@ -3,6 +3,7 @@ from .dataset import Dataset, EvaluationData, Annotation
 from .task import EvaluationTask, TaskResult
 from .scoring_template import ScoringCriteriaTemplate
 from .prompt_template import TaskPromptTemplate
+from .user import User
 
 __all__ = [
     "Base",
@@ -13,4 +14,5 @@ __all__ = [
     "TaskResult",
     "ScoringCriteriaTemplate",
     "TaskPromptTemplate",
+    "User",
 ]

@@ -1,9 +1,13 @@
 from secrets import compare_digest, token_urlsafe
+import hashlib
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.core.config import get_settings
+from app.core.database import get_db
+from app.models import User
 
 router = APIRouter()
 
@@ -32,17 +36,22 @@ def require_auth(request: Request) -> str:
     return username
 
 
-@router.post("/login", response_model=AuthUserResponse, summary="管理员登录")
-def login(payload: LoginRequest, response: Response):
+@router.post("/login", response_model=AuthUserResponse, summary="用户登录")
+def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
     settings = get_settings()
-    if not (
+    is_admin_login = (
         compare_digest(payload.username, settings.admin_username)
         and compare_digest(payload.password, settings.admin_password)
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="用户名或密码错误",
-        )
+    )
+
+    if not is_admin_login:
+        user = db.query(User).filter(User.username == payload.username, User.deleted_at.is_(None)).first()
+        input_password_hash = hashlib.sha256(payload.password.encode("utf-8")).hexdigest()
+        if not user or user.status != "active" or not compare_digest(user.password_hash, input_password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="用户名或密码错误",
+            )
 
     session_token = token_urlsafe(32)
     _sessions[session_token] = payload.username
