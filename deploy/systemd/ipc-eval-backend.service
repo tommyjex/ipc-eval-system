@@ -1,0 +1,19 @@
+[Unit]
+Description=IPC Eval Backend Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/root/ipc-eval-system/backend
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/root/ipc-eval-system/backend/.venv/bin/python run.py
+Restart=always
+RestartSec=3
+StandardOutput=append:/var/log/ipc-eval/backend.log
+StandardError=append:/var/log/ipc-eval/backend-error.log
+
+[Install]
+WantedBy=multi-user.target
