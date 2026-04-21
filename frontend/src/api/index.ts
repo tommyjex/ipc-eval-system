@@ -101,6 +101,40 @@ export interface AuthUser {
   username: string;
 }
 
+export type UserRole = 'admin' | 'user';
+export type UserStatus = 'active' | 'disabled';
+
+export interface User {
+  id: number;
+  username: string;
+  nickname: string | null;
+  role: UserRole;
+  status: UserStatus;
+  last_login_at: string | null;
+  created_at: string;
+  updated_at: string | null;
+  deleted_at: string | null;
+}
+
+export interface UserListResponse {
+  items: User[];
+  total: number;
+}
+
+export interface UserCreateRequest {
+  username: string;
+  password: string;
+  nickname?: string;
+  role?: UserRole;
+  status?: UserStatus;
+}
+
+export interface UserUpdateRequest {
+  nickname?: string;
+  role?: UserRole;
+  status?: UserStatus;
+}
+
 export type DatasetType = 'video' | 'image' | 'mixed';
 export type DatasetScene = 'video_retrieval' | 'smart_alert';
 export type DatasetStatus = 'draft' | 'ready' | 'archived';
@@ -381,6 +415,21 @@ export const authApi = {
   login: (payload: { username: string; password: string }) => api.post<AuthUser>('/auth/login', payload),
   logout: () => api.post<void>('/auth/logout', {}),
   me: () => api.get<AuthUser>('/auth/me'),
+};
+
+export const userApi = {
+  list: (params?: { page?: number; page_size?: number; keyword?: string }) =>
+    api.get<UserListResponse>('/users', params),
+  get: (userId: number) =>
+    api.get<User>(`/users/${userId}`),
+  create: (data: UserCreateRequest) =>
+    api.post<User>('/users', data),
+  update: (userId: number, data: UserUpdateRequest) =>
+    api.put<User>(`/users/${userId}`, data),
+  resetPassword: (userId: number, data: { password: string }) =>
+    api.post<User>(`/users/${userId}/reset-password`, data),
+  delete: (userId: number) =>
+    api.delete<void>(`/users/${userId}`),
 };
 
 export const scoringTemplateApi = {

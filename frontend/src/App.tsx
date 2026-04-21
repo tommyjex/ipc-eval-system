@@ -8,6 +8,7 @@ import { TaskListPage } from './pages/tasks/TaskListPage';
 import { TaskDetailPage } from './pages/tasks/TaskDetailPage';
 import { TaskComparePage } from './pages/tasks/TaskComparePage';
 import { LoginPage } from './pages/LoginPage';
+import { UserManagementPage } from './pages/users/UserManagementPage';
 
 const HOME_HERO_IMAGE = 'https://xujianhua-utils.tos-cn-beijing.volces.com/AI-IPC/frontend-assets/home_hero_v2.png';
 const PLATFORM_LOGO = 'https://xujianhua-utils.tos-cn-beijing.volces.com/AI-IPC/frontend-assets/visual_intelligence_logo.png';
@@ -71,6 +72,9 @@ function Layout({ username }: { username: string }) {
                 </Link>
                 <Link to="/tasks" className="text-gray-600 hover:text-gray-900 px-3 py-2">
                   评测任务
+                </Link>
+                <Link to="/users" className="text-gray-600 hover:text-gray-900 px-3 py-2">
+                  用户管理
                 </Link>
               </div>
             </div>
@@ -271,6 +275,10 @@ const router = createBrowserRouter(
         {
           path: 'tasks/:id',
           element: <TaskDetailPage />,
+        },
+        {
+          path: 'users',
+          element: <UserManagementPage />,
         },
       ],
     },
