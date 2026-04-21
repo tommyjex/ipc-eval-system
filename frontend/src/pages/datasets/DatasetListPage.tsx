@@ -64,11 +64,6 @@ export const DatasetListPage: React.FC = () => {
     }
   };
 
-  const handlePageSizeChange = (newSize: 50 | 100) => {
-    setPageSize(newSize);
-    setPage(1);
-  };
-
   const totalPages = Math.ceil(total / pageSize);
 
   return (
