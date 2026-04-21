@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     tos_access_key: str 
     tos_secret_key: str 
     tos_endpoint: str = "tos-cn-beijing.volces.com"
+    tos_public_endpoint: str = "tos-cn-beijing.volces.com"
     tos_region: str = "cn-beijing"
     tos_bucket: str = "xujianhua-utils"
 

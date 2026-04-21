@@ -14,6 +14,12 @@ class TOSClient:
             endpoint=settings.tos_endpoint,
             region=settings.tos_region,
         )
+        self.public_client = tos.TosClientV2(
+            ak=settings.tos_access_key,
+            sk=settings.tos_secret_key,
+            endpoint=settings.tos_public_endpoint,
+            region=settings.tos_region,
+        )
         self.bucket = settings.tos_bucket
         self.import_prefix = "AI-IPC"
 
@@ -24,19 +30,21 @@ class TOSClient:
         self,
         object_key: str,
         expires: int = 3600,
-        method: str = "PUT"
+        method: str = "PUT",
+        public_endpoint: bool = False,
     ) -> str:
         from tos import HttpMethodType
-        
+        client = self.public_client if public_endpoint else self.client
+
         if method.upper() == "PUT":
-            result = self.client.pre_signed_url(
+            result = client.pre_signed_url(
                 http_method=HttpMethodType.Http_Method_Put,
                 bucket=self.bucket,
                 key=object_key,
                 expires=expires
             )
         else:
-            result = self.client.pre_signed_url(
+            result = client.pre_signed_url(
                 http_method=HttpMethodType.Http_Method_Get,
                 bucket=self.bucket,
                 key=object_key,
@@ -44,8 +52,8 @@ class TOSClient:
             )
         return result.signed_url
 
-    def get_download_url(self, object_key: str, expires: int = 86400) -> str:
-        return self.get_presigned_url(object_key, expires, method="GET")
+    def get_download_url(self, object_key: str, expires: int = 86400, public_endpoint: bool = False) -> str:
+        return self.get_presigned_url(object_key, expires, method="GET", public_endpoint=public_endpoint)
 
     def check_object_exists(self, object_key: str) -> bool:
         try:

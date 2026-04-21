@@ -386,7 +386,9 @@ def _run_single_task_result(
         try:
             tos_client = get_tos_client()
             download_url = tos_client.get_download_url(data.tos_key)
-            is_gif = data.file_type.lower() == "gif"
+            model_download_url = tos_client.get_download_url(data.tos_key, public_endpoint=True)
+            lower_file_type = data.file_type.lower()
+            is_gif = lower_file_type == "gif"
 
             if is_gif:
                 inference_result = inference_client.annotate_gif_with_usage(
@@ -403,6 +405,7 @@ def _run_single_task_result(
                     annotation_prompt,
                     custom_tags,
                     fps=fps,
+                    model_file_url=model_download_url,
                 )
                 inference_result = inference_client.annotate_with_usage(content, target_model)
 

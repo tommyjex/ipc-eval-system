@@ -63,7 +63,7 @@ class DashScopeClient:
                         )
                     os.unlink(tmp.name)
 
-                    frame_urls.append(tos_client.get_download_url(object_key))
+                    frame_urls.append(tos_client.get_download_url(object_key, public_endpoint=True))
 
             return frame_urls
         except Exception as exc:
@@ -106,6 +106,7 @@ class DashScopeClient:
         custom_tags: Optional[list[str]] = None,
         gif_frame_urls: Optional[list[str]] = None,
         fps: float = DEFAULT_VIDEO_FPS,
+        model_file_url: Optional[str] = None,
     ) -> dict[str, Any]:
         lower_file_type = file_type.lower()
         video_types = {"mp4", "avi", "mov", "mkv", "flv", "wmv", "webm"}
@@ -149,14 +150,19 @@ class DashScopeClient:
         )
 
         if lower_file_type in video_types:
-            frame_urls = extract_video_frames(file_url, fps=fps, object_prefix="temp/dashscope_video_frames")
+            frame_urls = extract_video_frames(
+                file_url,
+                fps=fps,
+                object_prefix="temp/dashscope_video_frames",
+                public_download_url=True,
+            )
             media_content: list[dict[str, Any]] = [
                 *({"image": frame_url} for frame_url in frame_urls),
                 {"text": f"这是从视频中按固定时间间隔抽取的一组关键帧图片。{prompt}"},
             ]
         else:
             media_content = [
-                {"image": file_url},
+                {"image": model_file_url or file_url},
                 {"text": prompt},
             ]
 

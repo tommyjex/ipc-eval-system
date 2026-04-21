@@ -185,6 +185,7 @@ def _process_ai_annotations(
 
                 tos_client = get_tos_client()
                 download_url = tos_client.get_download_url(eval_data.tos_key)
+                model_download_url = tos_client.get_download_url(eval_data.tos_key, public_endpoint=True)
 
                 is_gif = eval_data.file_type.lower() == "gif"
 
@@ -200,7 +201,8 @@ def _process_ai_annotations(
                         download_url,
                         eval_data.file_type,
                         annotation_prompt,
-                        custom_tags
+                        custom_tags,
+                        model_file_url=model_download_url,
                     )
                     result = ark_client.annotate(content, model or settings.ark_model)
 

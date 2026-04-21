@@ -39,6 +39,7 @@ def extract_video_frames(
     video_url: str,
     fps: float = DEFAULT_VIDEO_FPS,
     object_prefix: str = "temp/video_frames",
+    public_download_url: bool = False,
 ) -> list[str]:
     target_fps = max(float(fps or DEFAULT_VIDEO_FPS), 0.01)
     response = requests.get(video_url, timeout=120)
@@ -76,7 +77,7 @@ def extract_video_frames(
                 key=object_key,
                 content=frame_buffer.getvalue(),
             )
-            frame_urls.append(tos_client.get_download_url(object_key))
+            frame_urls.append(tos_client.get_download_url(object_key, public_endpoint=public_download_url))
             next_capture_time += frame_interval_seconds
 
         if not frame_urls:

@@ -66,7 +66,7 @@ class ArkClient:
                         )
                     os.unlink(tmp.name)
                     
-                    frame_url = tos_client.get_download_url(object_key)
+                    frame_url = tos_client.get_download_url(object_key, public_endpoint=True)
                     frame_urls.append(frame_url)
             
             return frame_urls
@@ -82,6 +82,7 @@ class ArkClient:
         custom_tags: Optional[list[str]] = None,
         gif_frame_urls: Optional[list[str]] = None,
         fps: float = DEFAULT_VIDEO_FPS,
+        model_file_url: Optional[str] = None,
     ) -> list[dict]:
         video_types = {"mp4", "avi", "mov", "mkv", "flv", "wmv"}
         is_video = file_type.lower() in video_types
@@ -106,11 +107,16 @@ class ArkClient:
             for frame_url in gif_frame_urls:
                 content.append({"type": "input_image", "image_url": frame_url, "detail": "low"})
         elif is_video:
-            frame_urls = extract_video_frames(file_url, fps=fps, object_prefix="temp/ark_video_frames")
+            frame_urls = extract_video_frames(
+                file_url,
+                fps=fps,
+                object_prefix="temp/ark_video_frames",
+                public_download_url=True,
+            )
             for frame_url in frame_urls:
                 content.append({"type": "input_image", "image_url": frame_url, "detail": "low"})
         else:
-            content.append({"type": "input_image", "image_url": file_url, "detail": "low"})
+            content.append({"type": "input_image", "image_url": model_file_url or file_url, "detail": "low"})
 
         return content
 
