@@ -298,6 +298,8 @@ export interface EvaluationTask {
   status: TaskStatus;
   avg_recall: number | null;
   avg_accuracy: number | null;
+  avg_input_tokens: number | null;
+  avg_output_tokens: number | null;
   created_at: string;
   updated_at: string | null;
   completed_at: string | null;

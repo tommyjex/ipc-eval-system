@@ -634,13 +634,26 @@ def list_tasks(
         TaskResult.scoring_status == TaskScoringStatus.scored.value,
     ).group_by(TaskResult.task_id).subquery()
 
+    token_stats_subquery = db.query(
+        TaskResult.task_id.label("task_id"),
+        func.avg(TaskResult.input_tokens).label("avg_input_tokens"),
+        func.avg(TaskResult.output_tokens).label("avg_output_tokens"),
+    ).filter(
+        TaskResult.status == TaskResultStatus.completed.value,
+    ).group_by(TaskResult.task_id).subquery()
+
     query = db.query(
         EvaluationTask,
         stats_subquery.c.avg_recall,
         stats_subquery.c.avg_accuracy,
+        token_stats_subquery.c.avg_input_tokens,
+        token_stats_subquery.c.avg_output_tokens,
     ).outerjoin(
         stats_subquery,
         EvaluationTask.id == stats_subquery.c.task_id,
+    ).outerjoin(
+        token_stats_subquery,
+        EvaluationTask.id == token_stats_subquery.c.task_id,
     )
     
     if dataset_id:
@@ -673,9 +686,11 @@ def list_tasks(
     rows = query.order_by(order_clause, EvaluationTask.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
     tasks: list[EvaluationTask] = []
-    for task, avg_recall, avg_accuracy in rows:
+    for task, avg_recall, avg_accuracy, avg_input_tokens, avg_output_tokens in rows:
         task.avg_recall = avg_recall
         task.avg_accuracy = avg_accuracy
+        task.avg_input_tokens = avg_input_tokens
+        task.avg_output_tokens = avg_output_tokens
         tasks.append(task)
 
     return EvaluationTaskListResponse(items=tasks, total=total)

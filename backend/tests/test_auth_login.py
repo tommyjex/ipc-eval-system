@@ -7,6 +7,7 @@ from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker
 
 from app.api.auth import router
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.base import Base
 
@@ -58,14 +59,18 @@ def setup_function():
         )
 
 
-def test_admin_can_login_with_env_credentials():
+def test_admin_can_login_with_env_credentials(monkeypatch):
+    monkeypatch.setenv("ADMIN_USERNAME", "admin")
+    monkeypatch.setenv("ADMIN_PASSWORD", "test-admin-password")
+    get_settings.cache_clear()
     client = build_test_client()
     response = client.post(
         "/api/auth/login",
-        json={"username": "admin", "password": "AihymTs4X*7z*QGp"},
+        json={"username": "admin", "password": "test-admin-password"},
     )
     assert response.status_code == 200
     assert response.json()["username"] == "admin"
+    get_settings.cache_clear()
 
 
 def test_normal_user_can_login_with_database_credentials():

@@ -70,6 +70,8 @@ class EvaluationTaskResponse(EvaluationTaskBase):
     status: TaskStatus
     avg_recall: Optional[float] = None
     avg_accuracy: Optional[float] = None
+    avg_input_tokens: Optional[float] = None
+    avg_output_tokens: Optional[float] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None

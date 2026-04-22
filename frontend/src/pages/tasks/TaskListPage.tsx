@@ -7,6 +7,7 @@ const getRecentTemplateStorageKey = (scene: DatasetScene) => `recent-scoring-tem
 const getRecentPromptTemplateStorageKey = (scene: DatasetScene) => `recent-prompt-template:${scene}`;
 const normalizeFps = (value: number) => Math.max(0.01, Math.min(30, Number(value.toFixed(2))));
 const formatMetric = (value: number | null) => (value == null ? '-' : `${value.toFixed(2)}%`);
+const formatTokenMetric = (value: number | null) => (value == null ? '-' : value.toFixed(2));
 type MultiSelectOption<T extends string> = { value: T; label: string };
 
 const TASK_STATUS_OPTIONS: MultiSelectOption<TaskStatus>[] = [
@@ -685,6 +686,8 @@ export const TaskListPage: React.FC = () => {
                 </th>
                 <th className="px-4 py-3 text-left">平均召回率</th>
                 <th className="px-4 py-3 text-left">平均准确率</th>
+                <th className="px-4 py-3 text-left">平均输入 Token</th>
+                <th className="px-4 py-3 text-left">平均输出 Token</th>
                 <th className="px-4 py-3 text-left">创建时间</th>
                 <th className="px-4 py-3 text-left">操作</th>
               </tr>
@@ -692,7 +695,7 @@ export const TaskListPage: React.FC = () => {
             <tbody>
               {tasks.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-10 text-gray-500">
+                  <td colSpan={11} className="text-center py-10 text-gray-500">
                     当前筛选条件下暂无评测任务
                   </td>
                 </tr>
@@ -713,6 +716,8 @@ export const TaskListPage: React.FC = () => {
                   <td className="px-4 py-3">{getStatusBadge(task.status)}</td>
                   <td className="px-4 py-3">{formatMetric(task.avg_recall)}</td>
                   <td className="px-4 py-3">{formatMetric(task.avg_accuracy)}</td>
+                  <td className="px-4 py-3">{formatTokenMetric(task.avg_input_tokens)}</td>
+                  <td className="px-4 py-3">{formatTokenMetric(task.avg_output_tokens)}</td>
                   <td className="px-4 py-3">
                     {new Date(task.created_at).toLocaleString('zh-CN')}
                   </td>

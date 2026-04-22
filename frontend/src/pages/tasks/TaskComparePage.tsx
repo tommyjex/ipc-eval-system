@@ -4,8 +4,93 @@ import { datasetApi, taskApi } from '../../api';
 import type { Dataset, EvaluationTask } from '../../api';
 
 const formatMetric = (value: number | null) => (value == null ? '-' : `${value.toFixed(2)}%`);
-const getBarWidth = (value: number | null) => `${Math.max(0, Math.min(100, value ?? 0))}%`;
+const formatTokenMetric = (value: number | null) => (value == null ? '-' : value.toFixed(2));
 type MultiSelectOption = { value: string; label: string };
+
+const getBarHeight = (value: number | null) => `${Math.max(0, Math.min(100, value ?? 0))}%`;
+const truncateLabel = (value: string, maxLength: number) => (value.length > maxLength ? `${value.slice(0, maxLength)}...` : value);
+
+const getRankedBarClass = (
+  index: number,
+  total: number,
+  palette: {
+    top: string;
+    high: string;
+    medium: string;
+    low: string;
+  },
+) => {
+  if (total <= 1 || index === 0) return palette.top;
+  const ratio = index / Math.max(total - 1, 1);
+  if (ratio <= 0.33) return palette.high;
+  if (ratio <= 0.66) return palette.medium;
+  return palette.low;
+};
+
+const describePercentageDelta = (current: number | null, baseline: number | null, label: string) => {
+  if (current == null || baseline == null || baseline === 0) {
+    return `${label}暂无可比数据`;
+  }
+  const delta = ((current - baseline) / baseline) * 100;
+  if (Math.abs(delta) < 0.01) {
+    return `${label}基本持平`;
+  }
+  return delta > 0
+    ? `${label}高 ${Math.abs(delta).toFixed(1)}%`
+    : `${label}少 ${Math.abs(delta).toFixed(1)}%`;
+};
+
+const VerticalMetricChart: React.FC<{
+  title: string;
+  description: string;
+  tasks: EvaluationTask[];
+  metricKey: 'avg_recall' | 'avg_accuracy';
+  colorPalette: {
+    top: string;
+    high: string;
+    medium: string;
+    low: string;
+  };
+  accentClass: string;
+}> = ({ title, description, tasks, metricKey, colorPalette, accentClass }) => (
+  <div className="rounded-lg bg-white p-4 shadow">
+    <div className="mb-4">
+      <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+      <p className="mt-1 text-sm text-gray-600">{description}</p>
+    </div>
+    <div className="overflow-x-auto">
+      <div className="min-w-[720px]">
+        <div className="flex h-80 items-end gap-3 border-b border-l border-gray-200 px-4 pb-4 pt-6">
+          {tasks.map((task, index) => {
+            const value = task[metricKey];
+            const barClass = getRankedBarClass(index, tasks.length, colorPalette);
+            return (
+              <div key={`${metricKey}-${task.id}`} className="group flex min-w-[104px] flex-1 flex-col items-center justify-end">
+                <div className="relative flex h-56 w-full items-end justify-center">
+                  <div className="pointer-events-none absolute -top-20 left-1/2 z-10 hidden w-56 -translate-x-1/2 rounded-lg bg-gray-900 px-3 py-2 text-xs text-white shadow-lg group-hover:block">
+                    <div className="font-medium">{task.name}</div>
+                    <div className="mt-1 text-gray-200">{task.target_model}</div>
+                    <div className="mt-2 font-semibold text-white">{title}：{formatMetric(value)}</div>
+                  </div>
+                  <div
+                    className={`w-full max-w-[64px] rounded-t-md transition-all duration-200 group-hover:opacity-90 ${barClass}`}
+                    style={{ height: getBarHeight(value) }}
+                  />
+                </div>
+                <div className={`mt-2 text-sm font-medium ${accentClass}`}>{formatMetric(value)}</div>
+                <div className="mt-2 text-center text-[11px] leading-4 text-gray-600">
+                  <div className="font-medium text-gray-800" title={task.name}>{truncateLabel(task.name, 12)}</div>
+                  <div title={task.target_model}>{truncateLabel(task.target_model, 14)}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="px-4 pt-2 text-right text-xs text-gray-500">纵轴：得分（%）</div>
+      </div>
+    </div>
+  </div>
+);
 
 const MultiSelectDropdown: React.FC<{
   label: string;
@@ -189,6 +274,66 @@ export const TaskComparePage: React.FC = () => {
     [groupedTasks],
   );
 
+  const recallSortedTasks = useMemo(
+    () =>
+      [...groupedTasks].sort(
+        (a, b) => (b.avg_recall ?? -1) - (a.avg_recall ?? -1) || a.created_at.localeCompare(b.created_at),
+      ),
+    [groupedTasks],
+  );
+
+  const accuracySortedTasks = useMemo(
+    () =>
+      [...groupedTasks].sort(
+        (a, b) => (b.avg_accuracy ?? -1) - (a.avg_accuracy ?? -1) || a.created_at.localeCompare(b.created_at),
+      ),
+    [groupedTasks],
+  );
+
+  const modelTokenSummaries = useMemo(() => {
+    const modelMap = new Map<string, { model: string; inputValues: number[]; outputValues: number[] }>();
+    groupedTasks.forEach((task) => {
+      const current = modelMap.get(task.target_model) ?? {
+        model: task.target_model,
+        inputValues: [],
+        outputValues: [],
+      };
+      if (task.avg_input_tokens != null) current.inputValues.push(task.avg_input_tokens);
+      if (task.avg_output_tokens != null) current.outputValues.push(task.avg_output_tokens);
+      modelMap.set(task.target_model, current);
+    });
+
+    return Array.from(modelMap.values()).map((item) => ({
+      model: item.model,
+      avgInputTokens:
+        item.inputValues.length > 0
+          ? item.inputValues.reduce((sum, value) => sum + value, 0) / item.inputValues.length
+          : null,
+      avgOutputTokens:
+        item.outputValues.length > 0
+          ? item.outputValues.reduce((sum, value) => sum + value, 0) / item.outputValues.length
+          : null,
+    }));
+  }, [groupedTasks]);
+
+  const tokenComparisonConclusions = useMemo(() => {
+    const conclusions: string[] = [];
+    for (let i = 0; i < modelTokenSummaries.length; i += 1) {
+      for (let j = i + 1; j < modelTokenSummaries.length; j += 1) {
+        const current = modelTokenSummaries[i];
+        const baseline = modelTokenSummaries[j];
+        conclusions.push(
+          `${current.model} 比 ${baseline.model}，${describePercentageDelta(
+            current.avgInputTokens,
+            baseline.avgInputTokens,
+            '输入 Token',
+          )}，${describePercentageDelta(current.avgOutputTokens, baseline.avgOutputTokens, '输出 Token')}。`,
+        );
+      }
+    }
+    return conclusions;
+  }, [modelTokenSummaries]);
+
   const selectedDatasetName =
     datasets.find((dataset) => String(dataset.id) === selectedDatasetId)?.name ?? '未选择评测集';
 
@@ -254,75 +399,76 @@ export const TaskComparePage: React.FC = () => {
         </div>
       ) : (
         <div className="space-y-6">
+          <VerticalMetricChart
+            title="召回率柱状图"
+            description="按召回率从高到低排列，横轴为任务（任务名 + 模型），纵轴为得分。"
+            tasks={recallSortedTasks}
+            metricKey="avg_recall"
+            colorPalette={{
+              top: 'bg-green-700',
+              high: 'bg-green-600',
+              medium: 'bg-green-500',
+              low: 'bg-green-300',
+            }}
+            accentClass="text-green-700"
+          />
+
+          <VerticalMetricChart
+            title="准确率柱状图"
+            description="按准确率从高到低排列，横轴为任务（任务名 + 模型），纵轴为得分。"
+            tasks={accuracySortedTasks}
+            metricKey="avg_accuracy"
+            colorPalette={{
+              top: 'bg-orange-700',
+              high: 'bg-orange-600',
+              medium: 'bg-orange-500',
+              low: 'bg-orange-300',
+            }}
+            accentClass="text-orange-600"
+          />
+
           <div className="rounded-lg bg-white p-4 shadow">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">指标柱状图</h2>
-                <p className="mt-1 text-sm text-gray-600">绿色表示召回率，橙色表示准确率，颜色更深表示该维度最优。</p>
-              </div>
-              <div className="flex items-center gap-4 text-xs text-gray-600">
-                <div className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded bg-green-400" />
-                  <span>召回率</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded bg-orange-400" />
-                  <span>准确率</span>
-                </div>
-              </div>
+            <h2 className="text-lg font-semibold text-gray-900">Token 对比分析</h2>
+            <p className="mt-1 text-sm text-gray-600">按模型聚合各任务的平均输入 / 输出 Token，并生成差异结论。</p>
+
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-[640px] w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left">模型</th>
+                    <th className="px-4 py-3 text-left">平均输入 Token</th>
+                    <th className="px-4 py-3 text-left">平均输出 Token</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {modelTokenSummaries.map((item) => (
+                    <tr key={item.model} className="border-t hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium text-gray-900">{item.model}</td>
+                      <td className="px-4 py-3">{formatTokenMetric(item.avgInputTokens)}</td>
+                      <td className="px-4 py-3">{formatTokenMetric(item.avgOutputTokens)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div className="space-y-4">
-              {groupedTasks.map((task) => {
-                const isBestRecall = task.avg_recall != null && task.avg_recall === bestRecall;
-                const isBestAccuracy = task.avg_accuracy != null && task.avg_accuracy === bestAccuracy;
-                return (
-                  <div key={task.id} className="rounded border border-gray-100 p-4">
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                      <Link to={`/tasks/${task.id}`} className="font-medium text-blue-600 hover:text-blue-800 hover:underline">
-                        {task.name}
-                      </Link>
-                      <div className="text-sm text-gray-500">
-                        {task.model_provider} / {task.target_model}
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      <div>
-                        <div className="mb-1 flex items-center justify-between text-sm">
-                          <span className={isBestRecall ? 'font-semibold text-green-700' : 'text-gray-700'}>召回率</span>
-                          <span className={isBestRecall ? 'font-semibold text-green-700' : 'text-gray-700'}>
-                            {formatMetric(task.avg_recall)}
-                          </span>
-                        </div>
-                        <div className="h-4 w-full rounded-full bg-gray-100">
-                          <div
-                            className={`h-4 rounded-full ${isBestRecall ? 'bg-green-600' : 'bg-green-400'}`}
-                            style={{ width: getBarWidth(task.avg_recall) }}
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <div className="mb-1 flex items-center justify-between text-sm">
-                          <span className={isBestAccuracy ? 'font-semibold text-orange-600' : 'text-gray-700'}>准确率</span>
-                          <span className={isBestAccuracy ? 'font-semibold text-orange-600' : 'text-gray-700'}>
-                            {formatMetric(task.avg_accuracy)}
-                          </span>
-                        </div>
-                        <div className="h-4 w-full rounded-full bg-gray-100">
-                          <div
-                            className={`h-4 rounded-full ${isBestAccuracy ? 'bg-orange-600' : 'bg-orange-400'}`}
-                            style={{ width: getBarWidth(task.avg_accuracy) }}
-                          />
-                        </div>
-                      </div>
-                    </div>
+
+            <div className="mt-4 space-y-2">
+              {tokenComparisonConclusions.length === 0 ? (
+                <div className="rounded border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-500">
+                  当前模型数量不足 2 个，或缺少可比较的 Token 数据。
+                </div>
+              ) : (
+                tokenComparisonConclusions.map((conclusion) => (
+                  <div key={conclusion} className="rounded border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                    {conclusion}
                   </div>
-                );
-              })}
+                ))
+              )}
             </div>
           </div>
 
           <div className="rounded-lg bg-white shadow overflow-x-auto">
-            <table className="min-w-[1000px] w-full">
+            <table className="min-w-[1200px] w-full">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left">任务名称</th>
@@ -330,6 +476,8 @@ export const TaskComparePage: React.FC = () => {
                   <th className="px-4 py-3 text-left">目标模型</th>
                   <th className="px-4 py-3 text-left">平均召回率</th>
                   <th className="px-4 py-3 text-left">平均准确率</th>
+                  <th className="px-4 py-3 text-left">平均输入 Token</th>
+                  <th className="px-4 py-3 text-left">平均输出 Token</th>
                   <th className="px-4 py-3 text-left">结论</th>
                 </tr>
               </thead>
@@ -352,6 +500,8 @@ export const TaskComparePage: React.FC = () => {
                       <td className={`px-4 py-3 ${isBestAccuracy ? 'font-semibold text-orange-600' : ''}`}>
                         {formatMetric(task.avg_accuracy)}
                       </td>
+                      <td className="px-4 py-3">{formatTokenMetric(task.avg_input_tokens)}</td>
+                      <td className="px-4 py-3">{formatTokenMetric(task.avg_output_tokens)}</td>
                       <td className="px-4 py-3 text-sm text-gray-600">
                         {[isBestRecall ? '召回率最高' : '', isBestAccuracy ? '准确率最高' : '']
                           .filter(Boolean)
