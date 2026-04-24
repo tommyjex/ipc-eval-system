@@ -24,6 +24,7 @@ from app.services import get_ark_client
 router = APIRouter()
 
 _ai_annotation_tasks: dict[str, AIAnnotationStatus] = {}
+DIRECT_VIDEO_ANNOTATION_FPS = 1.0
 
 
 @router.post(
@@ -202,7 +203,10 @@ def _process_ai_annotations(
                         eval_data.file_type,
                         annotation_prompt,
                         custom_tags,
+                        fps=DIRECT_VIDEO_ANNOTATION_FPS,
                         model_file_url=model_download_url,
+                        direct_video_url=eval_data.file_type.lower() != "gif"
+                        and eval_data.file_type.lower() in {"mp4", "avi", "mov", "mkv", "flv", "wmv", "webm"},
                     )
                     result = ark_client.annotate(content, model or settings.ark_model)
 

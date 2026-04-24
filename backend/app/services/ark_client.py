@@ -83,6 +83,7 @@ class ArkClient:
         gif_frame_urls: Optional[list[str]] = None,
         fps: float = DEFAULT_VIDEO_FPS,
         model_file_url: Optional[str] = None,
+        direct_video_url: bool = False,
     ) -> list[dict]:
         video_types = {"mp4", "avi", "mov", "mkv", "flv", "wmv"}
         is_video = file_type.lower() in video_types
@@ -93,7 +94,11 @@ class ArkClient:
         if is_gif and gif_frame_urls:
             default_prompt = "这是一个GIF动画的多帧图片，请分析这些帧图片的内容，描述动画中的场景、物体、人物活动等信息。"
         elif is_video:
-            default_prompt = "这是从视频中按固定时间间隔抽取的一组关键帧图片，请综合分析这些帧图片的内容，描述视频中的场景、物体、人物活动等信息。"
+            default_prompt = (
+                "请直接分析这个视频的内容，描述视频中的场景、物体、人物活动等信息。"
+                if direct_video_url
+                else "这是从视频中按固定时间间隔抽取的一组关键帧图片，请综合分析这些帧图片的内容，描述视频中的场景、物体、人物活动等信息。"
+            )
         
         user_prompt = annotation_prompt or default_prompt
         
@@ -107,14 +112,23 @@ class ArkClient:
             for frame_url in gif_frame_urls:
                 content.append({"type": "input_image", "image_url": frame_url, "detail": "low"})
         elif is_video:
-            frame_urls = extract_video_frames(
-                file_url,
-                fps=fps,
-                object_prefix="temp/ark_video_frames",
-                public_download_url=True,
-            )
-            for frame_url in frame_urls:
-                content.append({"type": "input_image", "image_url": frame_url, "detail": "low"})
+            if direct_video_url:
+                content.append(
+                    {
+                        "type": "input_video",
+                        "video_url": model_file_url or file_url,
+                        "fps": fps,
+                    }
+                )
+            else:
+                frame_urls = extract_video_frames(
+                    file_url,
+                    fps=fps,
+                    object_prefix="temp/ark_video_frames",
+                    public_download_url=True,
+                )
+                for frame_url in frame_urls:
+                    content.append({"type": "input_image", "image_url": frame_url, "detail": "low"})
         else:
             content.append({"type": "input_image", "image_url": model_file_url or file_url, "detail": "low"})
 
