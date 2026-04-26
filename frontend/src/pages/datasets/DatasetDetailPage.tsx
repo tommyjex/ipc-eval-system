@@ -81,7 +81,12 @@ export const DatasetDetailPage: React.FC = () => {
   const fetchSingleData = async (dataId: number) => {
     if (!id) return;
     try {
-      const dataRes = await evaluationDataApi.list(parseInt(id), { page: dataPage, page_size: dataPageSize });
+      const dataRes = await evaluationDataApi.list(parseInt(id), {
+        status: statusFilter === 'all' ? undefined : statusFilter,
+        keyword: keywordFilter || undefined,
+        page: dataPage,
+        page_size: dataPageSize,
+      });
       const freshData = dataRes.items.find((item) => item.id === dataId);
       if (freshData) {
         updateDataRow(freshData);

@@ -44,7 +44,7 @@ const VerticalMetricChart: React.FC<{
   title: string;
   description: string;
   tasks: EvaluationTask[];
-  metricKey: 'avg_recall' | 'avg_accuracy';
+  metricKey: 'micro_recall' | 'micro_precision';
   colorPalette: {
     top: string;
     high: string;
@@ -266,26 +266,26 @@ export const TaskComparePage: React.FC = () => {
   }, [completedTasks, selectedDatasetId]);
 
   const bestRecall = useMemo(
-    () => Math.max(...groupedTasks.map((task) => task.avg_recall ?? -1), -1),
+    () => Math.max(...groupedTasks.map((task) => task.micro_recall ?? -1), -1),
     [groupedTasks],
   );
-  const bestAccuracy = useMemo(
-    () => Math.max(...groupedTasks.map((task) => task.avg_accuracy ?? -1), -1),
+  const bestPrecision = useMemo(
+    () => Math.max(...groupedTasks.map((task) => task.micro_precision ?? -1), -1),
     [groupedTasks],
   );
 
   const recallSortedTasks = useMemo(
     () =>
       [...groupedTasks].sort(
-        (a, b) => (b.avg_recall ?? -1) - (a.avg_recall ?? -1) || a.created_at.localeCompare(b.created_at),
+        (a, b) => (b.micro_recall ?? -1) - (a.micro_recall ?? -1) || a.created_at.localeCompare(b.created_at),
       ),
     [groupedTasks],
   );
 
-  const accuracySortedTasks = useMemo(
+  const precisionSortedTasks = useMemo(
     () =>
       [...groupedTasks].sort(
-        (a, b) => (b.avg_accuracy ?? -1) - (a.avg_accuracy ?? -1) || a.created_at.localeCompare(b.created_at),
+        (a, b) => (b.micro_precision ?? -1) - (a.micro_precision ?? -1) || a.created_at.localeCompare(b.created_at),
       ),
     [groupedTasks],
   );
@@ -401,9 +401,9 @@ export const TaskComparePage: React.FC = () => {
         <div className="space-y-6">
           <VerticalMetricChart
             title="召回率柱状图"
-            description="按召回率从高到低排列，横轴为任务（任务名 + 模型），纵轴为得分。"
+            description="按 Micro 召回率从高到低排列，横轴为任务（任务名 + 模型），纵轴为得分。"
             tasks={recallSortedTasks}
-            metricKey="avg_recall"
+            metricKey="micro_recall"
             colorPalette={{
               top: 'bg-green-700',
               high: 'bg-green-600',
@@ -414,10 +414,10 @@ export const TaskComparePage: React.FC = () => {
           />
 
           <VerticalMetricChart
-            title="准确率柱状图"
-            description="按准确率从高到低排列，横轴为任务（任务名 + 模型），纵轴为得分。"
-            tasks={accuracySortedTasks}
-            metricKey="avg_accuracy"
+            title="精确率柱状图"
+            description="按 Micro 精确率从高到低排列，横轴为任务（任务名 + 模型），纵轴为得分。"
+            tasks={precisionSortedTasks}
+            metricKey="micro_precision"
             colorPalette={{
               top: 'bg-orange-700',
               high: 'bg-orange-600',
@@ -474,8 +474,8 @@ export const TaskComparePage: React.FC = () => {
                   <th className="px-4 py-3 text-left">任务名称</th>
                   <th className="px-4 py-3 text-left">模型供应商</th>
                   <th className="px-4 py-3 text-left">目标模型</th>
-                  <th className="px-4 py-3 text-left">平均召回率</th>
-                  <th className="px-4 py-3 text-left">平均准确率</th>
+                  <th className="px-4 py-3 text-left">Micro 召回率</th>
+                  <th className="px-4 py-3 text-left">Micro 精确率</th>
                   <th className="px-4 py-3 text-left">平均输入 Token</th>
                   <th className="px-4 py-3 text-left">平均输出 Token</th>
                   <th className="px-4 py-3 text-left">结论</th>
@@ -483,8 +483,8 @@ export const TaskComparePage: React.FC = () => {
               </thead>
               <tbody>
                 {groupedTasks.map((task) => {
-                  const isBestRecall = task.avg_recall != null && task.avg_recall === bestRecall;
-                  const isBestAccuracy = task.avg_accuracy != null && task.avg_accuracy === bestAccuracy;
+                  const isBestRecall = task.micro_recall != null && task.micro_recall === bestRecall;
+                  const isBestPrecision = task.micro_precision != null && task.micro_precision === bestPrecision;
                   return (
                     <tr key={task.id} className="border-t hover:bg-gray-50">
                       <td className="px-4 py-3">
@@ -495,15 +495,15 @@ export const TaskComparePage: React.FC = () => {
                       <td className="px-4 py-3">{task.model_provider}</td>
                       <td className="px-4 py-3">{task.target_model}</td>
                       <td className={`px-4 py-3 ${isBestRecall ? 'font-semibold text-green-700' : ''}`}>
-                        {formatMetric(task.avg_recall)}
+                        {formatMetric(task.micro_recall)}
                       </td>
-                      <td className={`px-4 py-3 ${isBestAccuracy ? 'font-semibold text-orange-600' : ''}`}>
-                        {formatMetric(task.avg_accuracy)}
+                      <td className={`px-4 py-3 ${isBestPrecision ? 'font-semibold text-orange-600' : ''}`}>
+                        {formatMetric(task.micro_precision)}
                       </td>
                       <td className="px-4 py-3">{formatTokenMetric(task.avg_input_tokens)}</td>
                       <td className="px-4 py-3">{formatTokenMetric(task.avg_output_tokens)}</td>
                       <td className="px-4 py-3 text-sm text-gray-600">
-                        {[isBestRecall ? '召回率最高' : '', isBestAccuracy ? '准确率最高' : '']
+                        {[isBestRecall ? '召回率最高' : '', isBestPrecision ? '精确率最高' : '']
                           .filter(Boolean)
                           .join(' / ') || '-'}
                       </td>

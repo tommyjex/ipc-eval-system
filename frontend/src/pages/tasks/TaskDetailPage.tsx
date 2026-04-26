@@ -1,9 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { taskApi, datasetApi, scoringTemplateApi, promptTemplateApi, buildEvaluationDataPreviewUrl } from '../../api';
-import type { EvaluationTask, TaskResultDetail, TaskStatus, TaskScoringStatus, TaskResultStatus, DatasetScene, ScoringTemplate, PromptTemplate } from '../../api';
+import { taskApi, datasetApi, promptTemplateApi, buildEvaluationDataPreviewUrl } from '../../api';
+import type { EvaluationTask, TaskResultDetail, TaskStatus, TaskScoringStatus, TaskResultStatus, DatasetScene, PromptTemplate } from '../../api';
 
-const getRecentTemplateStorageKey = (scene: DatasetScene) => `recent-scoring-template:${scene}`;
 const getRecentPromptTemplateStorageKey = (scene: DatasetScene) => `recent-prompt-template:${scene}`;
 const normalizeFps = (value: number) => Math.max(0.01, Math.min(30, Number(value.toFixed(2))));
 const SMART_SCORE_DEFER_MS = 1500;
@@ -34,8 +33,17 @@ const normalizeResultDetail = (result: Partial<TaskResultDetail>): TaskResultDet
   output_tokens: result.output_tokens ?? null,
   score: result.score ?? null,
   recall: result.recall ?? null,
-  accuracy: result.accuracy ?? null,
+  precision: result.precision ?? null,
   score_reason: result.score_reason ?? null,
+  tp_count: result.tp_count ?? null,
+  fp_count: result.fp_count ?? null,
+  fn_count: result.fn_count ?? null,
+  ground_truth_unit_count: result.ground_truth_unit_count ?? null,
+  predicted_unit_count: result.predicted_unit_count ?? null,
+  is_scorable: result.is_scorable ?? null,
+  is_empty_sample: result.is_empty_sample ?? null,
+  empty_sample_passed: result.empty_sample_passed ?? null,
+  metric_version: result.metric_version ?? null,
   scoring_status: (result.scoring_status ?? 'not_scored') as TaskScoringStatus,
   scoring_error_message: result.scoring_error_message ?? null,
   scoring_model: result.scoring_model ?? null,
@@ -171,7 +179,6 @@ export const TaskDetailPage: React.FC = () => {
   const [datasetName, setDatasetName] = useState('');
   const [datasetScene, setDatasetScene] = useState<DatasetScene | null>(null);
   const [datasetCustomTags, setDatasetCustomTags] = useState<string[]>([]);
-  const [templates, setTemplates] = useState<ScoringTemplate[]>([]);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
   const [results, setResults] = useState<TaskResultDetail[]>([]);
   const [loading, setLoading] = useState(true);
@@ -183,7 +190,6 @@ export const TaskDetailPage: React.FC = () => {
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [editForm, setEditForm] = useState({
     name: '',
-    scoring_criteria: '',
     prompt: '',
     fps: 0.3,
   });
@@ -192,13 +198,17 @@ export const TaskDetailPage: React.FC = () => {
   const [pageSize, setPageSize] = useState<50 | 100>(50);
   const [resultStatusFilter, setResultStatusFilter] = useState<TaskResultStatus[]>([]);
   const [scoringStatusFilter, setScoringStatusFilter] = useState<TaskScoringStatus[]>([]);
-  const [avgRecall, setAvgRecall] = useState<number | null>(null);
-  const [avgAccuracy, setAvgAccuracy] = useState<number | null>(null);
+  const [microRecall, setMicroRecall] = useState<number | null>(null);
+  const [microPrecision, setMicroPrecision] = useState<number | null>(null);
+  const [macroRecall, setMacroRecall] = useState<number | null>(null);
+  const [macroPrecision, setMacroPrecision] = useState<number | null>(null);
+  const [coverageRate, setCoverageRate] = useState<number | null>(null);
+  const [emptySamplePassRate, setEmptySamplePassRate] = useState<number | null>(null);
+  const [unscorableCount, setUnscorableCount] = useState(0);
   const [avgInputTokens, setAvgInputTokens] = useState<number | null>(null);
   const [avgOutputTokens, setAvgOutputTokens] = useState<number | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState<TaskResultDetail | null>(null);
-  const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [selectedPromptTemplateId, setSelectedPromptTemplateId] = useState('');
   const pollingRef = useRef(false);
 
@@ -224,7 +234,6 @@ export const TaskDetailPage: React.FC = () => {
         setDatasetCustomTags([]);
         setEditForm({
           name: taskRes.name,
-          scoring_criteria: taskRes.scoring_criteria || '',
           prompt: taskRes.prompt || '',
           fps: taskRes.fps || 0.3,
         });
@@ -237,12 +246,9 @@ export const TaskDetailPage: React.FC = () => {
           setDatasetScene(datasetRes.scene);
           setDatasetCustomTags(datasetRes.custom_tags || []);
           if (datasetRes.scene) {
-            const templateRes = await scoringTemplateApi.list({ scene: datasetRes.scene });
-            setTemplates(templateRes.items);
             const promptTemplateRes = await promptTemplateApi.list({ scene: datasetRes.scene });
             setPromptTemplates(promptTemplateRes.items);
           } else {
-            setTemplates([]);
             setPromptTemplates([]);
           }
         }
@@ -281,8 +287,13 @@ export const TaskDetailPage: React.FC = () => {
       setTotal(typeof resultsRes === 'object' && resultsRes !== null && 'total' in resultsRes && typeof resultsRes.total === 'number'
         ? resultsRes.total
         : detailItems.length);
-      setAvgRecall(typeof resultsRes === 'object' && resultsRes !== null && 'avg_recall' in resultsRes && typeof resultsRes.avg_recall === 'number' ? resultsRes.avg_recall : null);
-      setAvgAccuracy(typeof resultsRes === 'object' && resultsRes !== null && 'avg_accuracy' in resultsRes && typeof resultsRes.avg_accuracy === 'number' ? resultsRes.avg_accuracy : null);
+      setMicroRecall(typeof resultsRes === 'object' && resultsRes !== null && 'micro_recall' in resultsRes && typeof resultsRes.micro_recall === 'number' ? resultsRes.micro_recall : null);
+      setMicroPrecision(typeof resultsRes === 'object' && resultsRes !== null && 'micro_precision' in resultsRes && typeof resultsRes.micro_precision === 'number' ? resultsRes.micro_precision : null);
+      setMacroRecall(typeof resultsRes === 'object' && resultsRes !== null && 'macro_recall' in resultsRes && typeof resultsRes.macro_recall === 'number' ? resultsRes.macro_recall : null);
+      setMacroPrecision(typeof resultsRes === 'object' && resultsRes !== null && 'macro_precision' in resultsRes && typeof resultsRes.macro_precision === 'number' ? resultsRes.macro_precision : null);
+      setCoverageRate(typeof resultsRes === 'object' && resultsRes !== null && 'coverage_rate' in resultsRes && typeof resultsRes.coverage_rate === 'number' ? resultsRes.coverage_rate : null);
+      setEmptySamplePassRate(typeof resultsRes === 'object' && resultsRes !== null && 'empty_sample_pass_rate' in resultsRes && typeof resultsRes.empty_sample_pass_rate === 'number' ? resultsRes.empty_sample_pass_rate : null);
+      setUnscorableCount(typeof resultsRes === 'object' && resultsRes !== null && 'unscorable_count' in resultsRes && typeof resultsRes.unscorable_count === 'number' ? resultsRes.unscorable_count : 0);
       setAvgInputTokens(typeof resultsRes === 'object' && resultsRes !== null && 'avg_input_tokens' in resultsRes && typeof resultsRes.avg_input_tokens === 'number' ? resultsRes.avg_input_tokens : null);
       setAvgOutputTokens(typeof resultsRes === 'object' && resultsRes !== null && 'avg_output_tokens' in resultsRes && typeof resultsRes.avg_output_tokens === 'number' ? resultsRes.avg_output_tokens : null);
     } catch (err) {
@@ -397,25 +408,10 @@ export const TaskDetailPage: React.FC = () => {
   useEffect(() => {
     if (!editing || !datasetScene) {
       if (!editing) {
-        setSelectedTemplateId('');
         setSelectedPromptTemplateId('');
       }
       return;
     }
-
-    const recentTemplateId = window.localStorage.getItem(getRecentTemplateStorageKey(datasetScene));
-    const recentTemplate = templates.find((template) => String(template.id) === recentTemplateId);
-    if (!recentTemplate) {
-      setSelectedTemplateId('');
-      return;
-    }
-
-    setSelectedTemplateId(String(recentTemplate.id));
-    setEditForm((prev) => (
-      prev.scoring_criteria.trim()
-        ? prev
-        : { ...prev, scoring_criteria: recentTemplate.content }
-    ));
 
     const recentPromptTemplateId = window.localStorage.getItem(getRecentPromptTemplateStorageKey(datasetScene));
     const recentPromptTemplate = promptTemplates.find((template) => String(template.id) === recentPromptTemplateId);
@@ -430,7 +426,7 @@ export const TaskDetailPage: React.FC = () => {
         ? prev
         : { ...prev, prompt: recentPromptTemplate.content }
     ));
-  }, [editing, datasetScene, templates, promptTemplates]);
+  }, [editing, datasetScene, promptTemplates]);
 
   const handleRun = async (dataIds?: number[]) => {
     if (!id) return;
@@ -473,7 +469,6 @@ export const TaskDetailPage: React.FC = () => {
     if (!task) return;
     setEditForm({
       name: task.name,
-      scoring_criteria: task.scoring_criteria || '',
       prompt: task.prompt || '',
       fps: task.fps || 0.3,
     });
@@ -488,7 +483,6 @@ export const TaskDetailPage: React.FC = () => {
     try {
       await taskApi.update(parseInt(id), {
         name: editForm.name.trim(),
-        scoring_criteria: editForm.scoring_criteria,
         prompt: editForm.prompt,
         fps: editForm.fps,
       });
@@ -718,39 +712,6 @@ export const TaskDetailPage: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">评分标准</label>
-                    {datasetScene ? (
-                      <select
-                        value={selectedTemplateId}
-                        onChange={(e) => {
-                          setSelectedTemplateId(e.target.value);
-                          const template = templates.find((item) => String(item.id) === e.target.value);
-                          if (template) {
-                            window.localStorage.setItem(getRecentTemplateStorageKey(datasetScene), String(template.id));
-                            setEditForm({ ...editForm, scoring_criteria: template.content });
-                          }
-                        }}
-                        className="mb-2 w-full max-w-md rounded border px-3 py-2"
-                      >
-                        <option value="">选择{sceneLabelMap[datasetScene]}模板</option>
-                        {templates.map((template) => (
-                          <option key={template.id} value={template.id}>
-                            {template.name}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <p className="mb-2 text-xs text-gray-500">当前评测集未配置业务场景，无法筛选评分模板。</p>
-                    )}
-                    <textarea
-                      value={editForm.scoring_criteria}
-                      onChange={(e) => setEditForm({ ...editForm, scoring_criteria: e.target.value })}
-                      className="w-full px-3 py-2 border rounded"
-                      rows={4}
-                      placeholder="请输入评分标准"
-                    />
-                  </div>
-                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">视频帧率 (fps)</label>
                     <input
                       type="number"
@@ -870,15 +831,6 @@ export const TaskDetailPage: React.FC = () => {
             </div>
           )}
           
-          {!editing && task.scoring_criteria && (
-            <div className="mt-4 pt-4 border-t">
-              <h3 className="text-sm font-medium text-gray-700 mb-2">评分标准</h3>
-              <p className="text-sm text-gray-600 whitespace-pre-wrap bg-gray-50 p-3 rounded">
-                {task.scoring_criteria}
-              </p>
-            </div>
-          )}
-
           {!editing && (
             <div className="mt-4 pt-4 border-t">
               <h3 className="text-sm font-medium text-gray-700 mb-2">Prompt</h3>
@@ -922,15 +874,39 @@ export const TaskDetailPage: React.FC = () => {
               {resultsLoading && <p className="mt-1 text-sm text-gray-500">正在刷新结果列表...</p>}
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2">
-                  <div className="text-xs text-blue-700">平均召回率</div>
+                  <div className="text-xs text-blue-700">Micro 召回率</div>
                   <div className="text-lg font-semibold text-blue-900">
-                    {formatNullableNumber(avgRecall, 1, '%')}
+                    {formatNullableNumber(microRecall, 1, '%')}
                   </div>
                 </div>
                 <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-2">
-                  <div className="text-xs text-green-700">平均准确率</div>
+                  <div className="text-xs text-green-700">Micro 精确率</div>
                   <div className="text-lg font-semibold text-green-900">
-                    {formatNullableNumber(avgAccuracy, 1, '%')}
+                    {formatNullableNumber(microPrecision, 1, '%')}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2">
+                  <div className="text-xs text-emerald-700">Macro 召回率</div>
+                  <div className="text-lg font-semibold text-emerald-900">
+                    {formatNullableNumber(macroRecall, 1, '%')}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-2">
+                  <div className="text-xs text-teal-700">Macro 精确率</div>
+                  <div className="text-lg font-semibold text-teal-900">
+                    {formatNullableNumber(macroPrecision, 1, '%')}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-4 py-2">
+                  <div className="text-xs text-cyan-700">覆盖率</div>
+                  <div className="text-lg font-semibold text-cyan-900">
+                    {formatNullableNumber(coverageRate, 1, '%')}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2">
+                  <div className="text-xs text-slate-700">空样本通过率</div>
+                  <div className="text-lg font-semibold text-slate-900">
+                    {formatNullableNumber(emptySamplePassRate, 1, '%')}
                   </div>
                 </div>
                 <div className="rounded-lg border border-purple-200 bg-purple-50 px-4 py-2">
@@ -946,6 +922,9 @@ export const TaskDetailPage: React.FC = () => {
                   </div>
                 </div>
               </div>
+              <p className="mt-3 text-xs text-gray-500">
+                汇总指标默认采用 Micro 口径；空样本不计入主指标聚合，不可评测样本当前为 {unscorableCount} 条。
+              </p>
             </div>
             <div className="flex items-center gap-4">
               {task.status === 'running' && (
@@ -990,8 +969,8 @@ export const TaskDetailPage: React.FC = () => {
                 <th className="px-4 py-3 text-left">对象名称</th>
                 <th className="px-4 py-3 text-left">预览</th>
                 <th className="px-4 py-3 text-left">标注结果</th>
-                <th className="px-4 py-3 text-left">
-                  <div className="flex min-w-[140px] items-center gap-2 whitespace-nowrap">
+                <th className="px-4 py-3 text-left w-20">
+                  <div className="flex items-center gap-2 whitespace-nowrap">
                     <span className="whitespace-nowrap">评测状态</span>
                     <MultiSelectDropdown
                       label="评测状态"
@@ -1005,8 +984,8 @@ export const TaskDetailPage: React.FC = () => {
                   </div>
                 </th>
                 <th className="px-4 py-3 text-left">模型输出</th>
-                <th className="px-4 py-3 text-left">
-                  <div className="flex min-w-[140px] items-center gap-2 whitespace-nowrap">
+                <th className="px-4 py-3 text-left w-20">
+                  <div className="flex items-center gap-2 whitespace-nowrap">
                     <span className="whitespace-nowrap">评分状态</span>
                     <MultiSelectDropdown
                       label="评分状态"
@@ -1019,10 +998,10 @@ export const TaskDetailPage: React.FC = () => {
                     />
                   </div>
                 </th>
-                <th className="px-4 py-3 text-left">输入 Tokens</th>
-                <th className="px-4 py-3 text-left">输出 Tokens</th>
+                <th className="px-4 py-3 text-left whitespace-nowrap">输入 Tokens</th>
+                <th className="px-4 py-3 text-left whitespace-nowrap">输出 Tokens</th>
                 <th className="px-4 py-3 text-left">召回率</th>
-                <th className="px-4 py-3 text-left">准确率</th>
+                <th className="px-4 py-3 text-left">精确率</th>
                 <th className="px-4 py-3 text-left">评分理由</th>
               </tr>
             </thead>
@@ -1091,7 +1070,7 @@ export const TaskDetailPage: React.FC = () => {
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-sm text-gray-600">
-                        {result.accuracy !== null ? `${result.accuracy}%` : '-'}
+                        {result.precision !== null ? `${result.precision}%` : '-'}
                       </p>
                     </td>
                     <td className="px-4 py-3">

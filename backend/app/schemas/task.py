@@ -68,8 +68,13 @@ class EvaluationTaskResponse(EvaluationTaskBase):
     id: int
     dataset_id: int
     status: TaskStatus
-    avg_recall: Optional[float] = None
-    avg_accuracy: Optional[float] = None
+    micro_recall: Optional[float] = None
+    micro_precision: Optional[float] = None
+    macro_recall: Optional[float] = None
+    macro_precision: Optional[float] = None
+    coverage_rate: Optional[float] = None
+    empty_sample_pass_rate: Optional[float] = None
+    unscorable_count: int = 0
     avg_input_tokens: Optional[float] = None
     avg_output_tokens: Optional[float] = None
     created_at: datetime
@@ -92,8 +97,17 @@ class TaskResultBase(BaseModel):
     output_tokens: Optional[int] = Field(None, description="输出 tokens")
     score: Optional[int] = Field(None, description="评分")
     recall: Optional[float] = Field(None, description="召回率")
-    accuracy: Optional[float] = Field(None, description="准确率")
+    precision: Optional[float] = Field(None, description="精确率")
     score_reason: Optional[str] = Field(None, description="评分原因")
+    tp_count: Optional[int] = Field(None, description="命中数量")
+    fp_count: Optional[int] = Field(None, description="误报数量")
+    fn_count: Optional[int] = Field(None, description="漏检数量")
+    ground_truth_unit_count: Optional[int] = Field(None, description="标注单元数")
+    predicted_unit_count: Optional[int] = Field(None, description="预测单元数")
+    is_scorable: Optional[bool] = Field(None, description="是否可参与主指标聚合")
+    is_empty_sample: Optional[bool] = Field(None, description="是否为空样本")
+    empty_sample_passed: Optional[bool] = Field(None, description="空样本是否判断正确")
+    metric_version: Optional[str] = Field(None, description="评分口径版本")
     scoring_status: TaskScoringStatus = Field(..., description="评分状态")
     scoring_error_message: Optional[str] = Field(None, description="评分失败原因")
     scoring_model: Optional[str] = Field(None, description="评分模型")
@@ -129,8 +143,13 @@ class TaskResultDetailResponse(TaskResultResponse):
 class TaskResultDetailListResponse(BaseModel):
     items: list[TaskResultDetailResponse]
     total: int
-    avg_recall: Optional[float] = None
-    avg_accuracy: Optional[float] = None
+    micro_recall: Optional[float] = None
+    micro_precision: Optional[float] = None
+    macro_recall: Optional[float] = None
+    macro_precision: Optional[float] = None
+    coverage_rate: Optional[float] = None
+    empty_sample_pass_rate: Optional[float] = None
+    unscorable_count: int = 0
     avg_input_tokens: Optional[float] = None
     avg_output_tokens: Optional[float] = None
 

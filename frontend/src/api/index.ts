@@ -292,12 +292,16 @@ export interface EvaluationTask {
   name: string;
   target_model: string;
   model_provider: ModelProvider | null;
-  scoring_criteria: string | null;
   prompt: string | null;
   fps: number;
   status: TaskStatus;
-  avg_recall: number | null;
-  avg_accuracy: number | null;
+  micro_recall: number | null;
+  micro_precision: number | null;
+  macro_recall: number | null;
+  macro_precision: number | null;
+  coverage_rate: number | null;
+  empty_sample_pass_rate: number | null;
+  unscorable_count: number;
   avg_input_tokens: number | null;
   avg_output_tokens: number | null;
   created_at: string;
@@ -310,7 +314,6 @@ export interface EvaluationTaskCreate {
   name: string;
   target_model: string;
   model_provider?: ModelProvider;
-  scoring_criteria?: string;
   prompt?: string;
   fps?: number;
 }
@@ -325,8 +328,17 @@ export interface TaskResult {
   output_tokens: number | null;
   score: number | null;
   recall: number | null;
-  accuracy: number | null;
+  precision: number | null;
   score_reason: string | null;
+  tp_count: number | null;
+  fp_count: number | null;
+  fn_count: number | null;
+  ground_truth_unit_count: number | null;
+  predicted_unit_count: number | null;
+  is_scorable: boolean | null;
+  is_empty_sample: boolean | null;
+  empty_sample_passed: boolean | null;
+  metric_version: string | null;
   scoring_status: TaskScoringStatus;
   scoring_error_message: string | null;
   scoring_model: string | null;
@@ -348,8 +360,13 @@ export interface TaskResultDetail extends TaskResult {
 export interface TaskResultDetailListResponse {
   items: TaskResultDetail[];
   total: number;
-  avg_recall: number | null;
-  avg_accuracy: number | null;
+  micro_recall: number | null;
+  micro_precision: number | null;
+  macro_recall: number | null;
+  macro_precision: number | null;
+  coverage_rate: number | null;
+  empty_sample_pass_rate: number | null;
+  unscorable_count: number;
   avg_input_tokens: number | null;
   avg_output_tokens: number | null;
 }
@@ -358,21 +375,6 @@ export interface TaskResultSelectionResponse {
   total: number;
   result_ids: number[];
   data_ids: number[];
-}
-
-export interface ScoringTemplate {
-  id: number;
-  name: string;
-  scene: DatasetScene;
-  description: string | null;
-  content: string;
-  created_at: string;
-  updated_at: string | null;
-}
-
-export interface ScoringTemplateListResponse {
-  items: ScoringTemplate[];
-  total: number;
 }
 
 export interface PromptTemplate {
@@ -391,7 +393,7 @@ export interface PromptTemplateListResponse {
 }
 
 export const taskApi = {
-  list: (params?: { dataset_id?: number[]; model_provider?: ModelProvider[]; target_model?: string[]; status?: TaskStatus[]; sort_by?: 'avg_recall' | 'avg_accuracy'; sort_order?: 'asc' | 'desc'; page?: number; page_size?: number }) =>
+  list: (params?: { dataset_id?: number[]; model_provider?: ModelProvider[]; target_model?: string[]; status?: TaskStatus[]; sort_by?: 'micro_recall' | 'micro_precision'; sort_order?: 'asc' | 'desc'; page?: number; page_size?: number }) =>
     api.get<{ items: EvaluationTask[]; total: number }>('/tasks', params),
   get: (taskId: number) =>
     api.get<EvaluationTask>(`/tasks/${taskId}`),
@@ -432,17 +434,6 @@ export const userApi = {
     api.post<User>(`/users/${userId}/reset-password`, data),
   delete: (userId: number) =>
     api.delete<void>(`/users/${userId}`),
-};
-
-export const scoringTemplateApi = {
-  list: (params?: { scene?: DatasetScene }) =>
-    api.get<ScoringTemplateListResponse>('/scoring-templates', params),
-  create: (data: { name: string; scene: DatasetScene; description?: string; content: string }) =>
-    api.post<ScoringTemplate>('/scoring-templates', data),
-  update: (templateId: number, data: Partial<{ name: string; scene: DatasetScene; description: string; content: string }>) =>
-    api.put<ScoringTemplate>(`/scoring-templates/${templateId}`, data),
-  delete: (templateId: number) =>
-    api.delete<{ message: string }>(`/scoring-templates/${templateId}`),
 };
 
 export const promptTemplateApi = {

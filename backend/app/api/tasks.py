@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import case, func
 from typing import Optional
 import asyncio
 from collections import deque
@@ -29,12 +29,12 @@ from app.schemas.task import (
     TaskScoringStatus,
 )
 from app.utils import get_tos_client
-from app.utils import get_tos_client
 from app.services import get_ark_client, get_dashscope_client
+from app.services.scoring_metrics import METRIC_VERSION, compute_score_metrics
 from app.services.video_frames import DEFAULT_VIDEO_FPS
 
 router = APIRouter(prefix="/tasks", tags=["评测任务"])
-SMART_SCORING_MODEL = "doubao-seed-2-0-pro-260215"
+SMART_SCORING_MODEL = METRIC_VERSION
 TASK_INFERENCE_BATCH_SIZE = get_settings().task_inference_batch_size
 TASK_SCORING_BATCH_SIZE = get_settings().task_scoring_batch_size
 TASK_SINGLE_TIMEOUT_SECONDS = get_settings().task_single_timeout_seconds
@@ -44,6 +44,22 @@ logger = logging.getLogger(__name__)
 
 def _normalize_fps(value: float) -> float:
     return round(float(value), 2)
+
+
+def _reset_task_result_metrics(result: TaskResult):
+    result.score = None
+    result.recall = None
+    result.precision = None
+    result.score_reason = None
+    result.tp_count = None
+    result.fp_count = None
+    result.fn_count = None
+    result.ground_truth_unit_count = None
+    result.predicted_unit_count = None
+    result.is_scorable = True
+    result.is_empty_sample = False
+    result.empty_sample_passed = False
+    result.metric_version = None
 
 _running_tasks: dict[str, dict] = {}
 
@@ -65,8 +81,17 @@ def _mark_task_results_failed(db: Session, task_id: int, error_message: str):
             TaskResult.completed_at: datetime.now(),
             TaskResult.score: None,
             TaskResult.recall: None,
-            TaskResult.accuracy: None,
+            TaskResult.precision: None,
             TaskResult.score_reason: None,
+            TaskResult.tp_count: None,
+            TaskResult.fp_count: None,
+            TaskResult.fn_count: None,
+            TaskResult.ground_truth_unit_count: None,
+            TaskResult.predicted_unit_count: None,
+            TaskResult.is_scorable: True,
+            TaskResult.is_empty_sample: False,
+            TaskResult.empty_sample_passed: False,
+            TaskResult.metric_version: None,
             TaskResult.scoring_status: TaskScoringStatus.not_scored.value,
             TaskResult.scoring_error_message: None,
             TaskResult.scoring_model: None,
@@ -82,10 +107,7 @@ def _set_task_result_failed(result: TaskResult, error_message: str):
     result.model_output = None
     result.input_tokens = None
     result.output_tokens = None
-    result.score = None
-    result.recall = None
-    result.accuracy = None
-    result.score_reason = None
+    _reset_task_result_metrics(result)
     result.scoring_status = TaskScoringStatus.not_scored.value
     result.scoring_error_message = None
     result.scoring_model = None
@@ -107,8 +129,17 @@ def _mark_pending_task_results_failed(db: Session, task_id: int, error_message: 
             TaskResult.output_tokens: None,
             TaskResult.score: None,
             TaskResult.recall: None,
-            TaskResult.accuracy: None,
+            TaskResult.precision: None,
             TaskResult.score_reason: None,
+            TaskResult.tp_count: None,
+            TaskResult.fp_count: None,
+            TaskResult.fn_count: None,
+            TaskResult.ground_truth_unit_count: None,
+            TaskResult.predicted_unit_count: None,
+            TaskResult.is_scorable: True,
+            TaskResult.is_empty_sample: False,
+            TaskResult.empty_sample_passed: False,
+            TaskResult.metric_version: None,
             TaskResult.scoring_status: TaskScoringStatus.not_scored.value,
             TaskResult.scoring_error_message: None,
             TaskResult.scoring_model: None,
@@ -142,8 +173,17 @@ def _mark_selected_task_results_failed(
             TaskResult.output_tokens: None,
             TaskResult.score: None,
             TaskResult.recall: None,
-            TaskResult.accuracy: None,
+            TaskResult.precision: None,
             TaskResult.score_reason: None,
+            TaskResult.tp_count: None,
+            TaskResult.fp_count: None,
+            TaskResult.fn_count: None,
+            TaskResult.ground_truth_unit_count: None,
+            TaskResult.predicted_unit_count: None,
+            TaskResult.is_scorable: True,
+            TaskResult.is_empty_sample: False,
+            TaskResult.empty_sample_passed: False,
+            TaskResult.metric_version: None,
             TaskResult.scoring_status: TaskScoringStatus.not_scored.value,
             TaskResult.scoring_error_message: None,
             TaskResult.scoring_model: None,
@@ -250,8 +290,17 @@ def _prepare_task_results(
                     output_tokens=None,
                     score=None,
                     recall=None,
-                    accuracy=None,
+                    precision=None,
                     score_reason=None,
+                    tp_count=None,
+                    fp_count=None,
+                    fn_count=None,
+                    ground_truth_unit_count=None,
+                    predicted_unit_count=None,
+                    is_scorable=True,
+                    is_empty_sample=False,
+                    empty_sample_passed=False,
+                    metric_version=None,
                     scoring_error_message=None,
                     scoring_model=None,
                     scoring_started_at=None,
@@ -265,10 +314,7 @@ def _prepare_task_results(
                 result.model_output = None
                 result.input_tokens = None
                 result.output_tokens = None
-                result.score = None
-                result.recall = None
-                result.accuracy = None
-                result.score_reason = None
+                _reset_task_result_metrics(result)
                 result.scoring_error_message = None
                 result.scoring_model = None
                 result.scoring_started_at = None
@@ -288,8 +334,17 @@ def _prepare_task_results(
                 output_tokens=None,
                 score=None,
                 recall=None,
-                accuracy=None,
+                precision=None,
                 score_reason=None,
+                tp_count=None,
+                fp_count=None,
+                fn_count=None,
+                ground_truth_unit_count=None,
+                predicted_unit_count=None,
+                is_scorable=True,
+                is_empty_sample=False,
+                empty_sample_passed=False,
+                metric_version=None,
                 scoring_error_message=None,
                 scoring_model=None,
                 scoring_started_at=None,
@@ -339,8 +394,17 @@ def _run_single_task_result(
                     output_tokens=None,
                     score=None,
                     recall=None,
-                    accuracy=None,
+                    precision=None,
                     score_reason=None,
+                    tp_count=None,
+                    fp_count=None,
+                    fn_count=None,
+                    ground_truth_unit_count=None,
+                    predicted_unit_count=None,
+                    is_scorable=True,
+                    is_empty_sample=False,
+                    empty_sample_passed=False,
+                    metric_version=None,
                     scoring_error_message=None,
                     scoring_model=None,
                     scoring_started_at=None,
@@ -422,10 +486,7 @@ def _run_single_task_result(
             result.model_output = inference_result["text"]
             result.input_tokens = inference_result.get("input_tokens")
             result.output_tokens = inference_result.get("output_tokens")
-            result.score = None
-            result.recall = None
-            result.accuracy = None
-            result.score_reason = None
+            _reset_task_result_metrics(result)
             result.scoring_status = TaskScoringStatus.not_scored.value
             result.scoring_error_message = None
             result.scoring_model = None
@@ -465,11 +526,10 @@ def _run_single_task_result(
 
 def _score_single_task_result(
     result_id: int,
-    scoring_criteria: Optional[str],
+    _scoring_criteria: Optional[str],
 ) -> tuple[str, Optional[str]]:
     db = SessionLocal()
     try:
-        ark_client = get_ark_client()
         row = db.query(TaskResult, Annotation)\
             .join(EvaluationData, TaskResult.data_id == EvaluationData.id)\
             .outerjoin(Annotation, EvaluationData.id == Annotation.data_id)\
@@ -479,7 +539,7 @@ def _score_single_task_result(
             return ("failed", "评分结果不存在")
 
         result, annotation = row
-        if not result.model_output or not annotation or not annotation.ground_truth:
+        if result.model_output is None or not annotation or annotation.ground_truth is None:
             result.scoring_status = TaskScoringStatus.not_scored.value
             result.scoring_error_message = None
             result.scoring_model = None
@@ -499,17 +559,23 @@ def _score_single_task_result(
         db.commit()
 
         try:
-            scoring = ark_client.score_result(
+            scoring = compute_score_metrics(
                 ground_truth=annotation.ground_truth,
                 model_output=result.model_output,
-                scoring_criteria=scoring_criteria,
-                model=SMART_SCORING_MODEL,
             )
-
             result.recall = scoring["recall"]
-            result.accuracy = scoring["accuracy"]
+            result.precision = scoring["precision"]
+            result.tp_count = scoring["tp_count"]
+            result.fp_count = scoring["fp_count"]
+            result.fn_count = scoring["fn_count"]
+            result.ground_truth_unit_count = scoring["ground_truth_unit_count"]
+            result.predicted_unit_count = scoring["predicted_unit_count"]
+            result.is_scorable = scoring["is_scorable"]
+            result.is_empty_sample = scoring["is_empty_sample"]
+            result.empty_sample_passed = scoring["empty_sample_passed"]
+            result.metric_version = scoring["metric_version"]
             result.score_reason = scoring["reason"] or None
-            result.score = round((scoring["recall"] + scoring["accuracy"]) / 2)
+            result.score = scoring["score"]
             result.scoring_status = TaskScoringStatus.scored.value
             result.scoring_error_message = None
             result.scoring_completed_at = datetime.now()
@@ -554,10 +620,8 @@ def _get_scoreable_task_result_ids(
         .outerjoin(Annotation, EvaluationData.id == Annotation.data_id)\
         .filter(TaskResult.task_id == task_id)\
         .filter(TaskResult.model_output.isnot(None))\
-        .filter(TaskResult.model_output != "")\
         .filter(Annotation.id.isnot(None))\
-        .filter(Annotation.ground_truth.isnot(None))\
-        .filter(Annotation.ground_truth != "")
+        .filter(Annotation.ground_truth.isnot(None))
 
     if target_result_ids:
         query = query.filter(TaskResult.id.in_(set(target_result_ids)))
@@ -592,6 +656,61 @@ def _score_task_result_ids_concurrently(
                 )
 
 
+def _build_task_metric_stats_query(db: Session):
+    scored_condition = TaskResult.scoring_status == TaskScoringStatus.scored.value
+    aggregate_condition = (
+        scored_condition
+        & TaskResult.is_scorable.is_(True)
+        & TaskResult.is_empty_sample.is_(False)
+    )
+
+    return db.query(
+        TaskResult.task_id.label("task_id"),
+        func.sum(case((aggregate_condition, func.coalesce(TaskResult.tp_count, 0)), else_=0)).label("sum_tp"),
+        func.sum(case((aggregate_condition, func.coalesce(TaskResult.fp_count, 0)), else_=0)).label("sum_fp"),
+        func.sum(case((aggregate_condition, func.coalesce(TaskResult.fn_count, 0)), else_=0)).label("sum_fn"),
+        func.avg(case((aggregate_condition, TaskResult.recall), else_=None)).label("macro_recall"),
+        func.avg(case((aggregate_condition, TaskResult.precision), else_=None)).label("macro_precision"),
+        func.sum(case((scored_condition & TaskResult.is_scorable.is_(True), 1), else_=0)).label("scorable_count"),
+        func.sum(case((scored_condition & TaskResult.is_empty_sample.is_(True), 1), else_=0)).label("empty_sample_count"),
+        func.sum(case((scored_condition & TaskResult.empty_sample_passed.is_(True), 1), else_=0)).label("empty_sample_passed_count"),
+        func.sum(case((scored_condition & TaskResult.is_scorable.is_(False), 1), else_=0)).label("unscorable_count"),
+        func.count(TaskResult.id).label("total_count"),
+    ).group_by(TaskResult.task_id)
+
+
+def _attach_task_metric_summary(
+    target: object,
+    *,
+    sum_tp: Optional[int],
+    sum_fp: Optional[int],
+    sum_fn: Optional[int],
+    macro_recall: Optional[float],
+    macro_precision: Optional[float],
+    scorable_count: Optional[int],
+    empty_sample_count: Optional[int],
+    empty_sample_passed_count: Optional[int],
+    unscorable_count: Optional[int],
+    total_count: Optional[int],
+):
+    total_tp = int(sum_tp or 0)
+    total_fp = int(sum_fp or 0)
+    total_fn = int(sum_fn or 0)
+    scorable_total = int(scorable_count or 0)
+    total_samples = int(total_count or 0)
+    empty_total = int(empty_sample_count or 0)
+    empty_pass_total = int(empty_sample_passed_count or 0)
+    unscorable_total = int(unscorable_count or 0)
+
+    target.micro_recall = round(total_tp / (total_tp + total_fn) * 100, 2) if (total_tp + total_fn) > 0 else None
+    target.micro_precision = round(total_tp / (total_tp + total_fp) * 100, 2) if (total_tp + total_fp) > 0 else None
+    target.macro_recall = round(float(macro_recall), 2) if macro_recall is not None else None
+    target.macro_precision = round(float(macro_precision), 2) if macro_precision is not None else None
+    target.coverage_rate = round(scorable_total / total_samples * 100, 2) if total_samples > 0 else None
+    target.empty_sample_pass_rate = round(empty_pass_total / empty_total * 100, 2) if empty_total > 0 else None
+    target.unscorable_count = unscorable_total
+
+
 @router.post("", response_model=EvaluationTaskResponse, summary="创建评测任务")
 def create_task(data: EvaluationTaskCreate, db: Session = Depends(get_db)):
     dataset = db.query(Dataset).filter(Dataset.id == data.dataset_id).first()
@@ -620,19 +739,13 @@ def list_tasks(
     model_provider: Optional[list[str]] = Query(None, description="模型供应商"),
     target_model: Optional[list[str]] = Query(None, description="目标模型"),
     status: Optional[list[TaskStatus]] = Query(None, description="任务状态"),
-    sort_by: Optional[str] = Query(None, description="排序字段，可选 avg_recall / avg_accuracy"),
+    sort_by: Optional[str] = Query(None, description="排序字段，可选 micro_recall / micro_precision"),
     sort_order: Optional[str] = Query("desc", description="排序方向，可选 asc / desc"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     db: Session = Depends(get_db)
 ):
-    stats_subquery = db.query(
-        TaskResult.task_id.label("task_id"),
-        func.avg(TaskResult.recall).label("avg_recall"),
-        func.avg(TaskResult.accuracy).label("avg_accuracy"),
-    ).filter(
-        TaskResult.scoring_status == TaskScoringStatus.scored.value,
-    ).group_by(TaskResult.task_id).subquery()
+    stats_subquery = _build_task_metric_stats_query(db).subquery()
 
     token_stats_subquery = db.query(
         TaskResult.task_id.label("task_id"),
@@ -644,8 +757,16 @@ def list_tasks(
 
     query = db.query(
         EvaluationTask,
-        stats_subquery.c.avg_recall,
-        stats_subquery.c.avg_accuracy,
+        stats_subquery.c.sum_tp,
+        stats_subquery.c.sum_fp,
+        stats_subquery.c.sum_fn,
+        stats_subquery.c.macro_recall,
+        stats_subquery.c.macro_precision,
+        stats_subquery.c.scorable_count,
+        stats_subquery.c.empty_sample_count,
+        stats_subquery.c.empty_sample_passed_count,
+        stats_subquery.c.unscorable_count,
+        stats_subquery.c.total_count,
         token_stats_subquery.c.avg_input_tokens,
         token_stats_subquery.c.avg_output_tokens,
     ).outerjoin(
@@ -665,19 +786,23 @@ def list_tasks(
     if status:
         query = query.filter(EvaluationTask.status.in_([item.value for item in status]))
 
-    if sort_by not in (None, "avg_recall", "avg_accuracy"):
+    if sort_by not in (None, "micro_recall", "micro_precision"):
         raise HTTPException(status_code=400, detail="不支持的排序字段")
     if sort_order not in ("asc", "desc"):
         raise HTTPException(status_code=400, detail="不支持的排序方向")
 
     total = query.count()
 
-    if sort_by == "avg_recall":
-        sort_column = stats_subquery.c.avg_recall
+    if sort_by == "micro_recall":
+        numerator = func.coalesce(stats_subquery.c.sum_tp, 0)
+        denominator = func.nullif(func.coalesce(stats_subquery.c.sum_tp, 0) + func.coalesce(stats_subquery.c.sum_fn, 0), 0)
+        sort_column = numerator / denominator
         null_fallback = 999999 if sort_order == "asc" else -1
         order_clause = func.coalesce(sort_column, null_fallback).asc() if sort_order == "asc" else func.coalesce(sort_column, null_fallback).desc()
-    elif sort_by == "avg_accuracy":
-        sort_column = stats_subquery.c.avg_accuracy
+    elif sort_by == "micro_precision":
+        numerator = func.coalesce(stats_subquery.c.sum_tp, 0)
+        denominator = func.nullif(func.coalesce(stats_subquery.c.sum_tp, 0) + func.coalesce(stats_subquery.c.sum_fp, 0), 0)
+        sort_column = numerator / denominator
         null_fallback = 999999 if sort_order == "asc" else -1
         order_clause = func.coalesce(sort_column, null_fallback).asc() if sort_order == "asc" else func.coalesce(sort_column, null_fallback).desc()
     else:
@@ -686,9 +811,20 @@ def list_tasks(
     rows = query.order_by(order_clause, EvaluationTask.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
     tasks: list[EvaluationTask] = []
-    for task, avg_recall, avg_accuracy, avg_input_tokens, avg_output_tokens in rows:
-        task.avg_recall = avg_recall
-        task.avg_accuracy = avg_accuracy
+    for task, sum_tp, sum_fp, sum_fn, macro_recall, macro_precision, scorable_count, empty_sample_count, empty_sample_passed_count, unscorable_count, total_count, avg_input_tokens, avg_output_tokens in rows:
+        _attach_task_metric_summary(
+            task,
+            sum_tp=sum_tp,
+            sum_fp=sum_fp,
+            sum_fn=sum_fn,
+            macro_recall=macro_recall,
+            macro_precision=macro_precision,
+            scorable_count=scorable_count,
+            empty_sample_count=empty_sample_count,
+            empty_sample_passed_count=empty_sample_passed_count,
+            unscorable_count=unscorable_count,
+            total_count=total_count,
+        )
         task.avg_input_tokens = avg_input_tokens
         task.avg_output_tokens = avg_output_tokens
         tasks.append(task)
@@ -701,6 +837,21 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
     task = db.query(EvaluationTask).filter(EvaluationTask.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="评测任务不存在")
+    stats_row = _build_task_metric_stats_query(db).filter(TaskResult.task_id == task_id).first()
+    if stats_row:
+        _attach_task_metric_summary(
+            task,
+            sum_tp=stats_row.sum_tp,
+            sum_fp=stats_row.sum_fp,
+            sum_fn=stats_row.sum_fn,
+            macro_recall=stats_row.macro_recall,
+            macro_precision=stats_row.macro_precision,
+            scorable_count=stats_row.scorable_count,
+            empty_sample_count=stats_row.empty_sample_count,
+            empty_sample_passed_count=stats_row.empty_sample_passed_count,
+            unscorable_count=stats_row.unscorable_count,
+            total_count=stats_row.total_count,
+        )
     return task
 
 
@@ -902,13 +1053,7 @@ def get_task_results_detail(
     
     tos_client = get_tos_client()
     
-    score_avg_row = db.query(
-        func.avg(TaskResult.recall),
-        func.avg(TaskResult.accuracy),
-    ).filter(
-        TaskResult.task_id == task_id,
-        TaskResult.scoring_status == TaskScoringStatus.scored.value,
-    ).first()
+    score_stats = _build_task_metric_stats_query(db).filter(TaskResult.task_id == task_id).first()
 
     token_avg_row = db.query(
         func.avg(TaskResult.input_tokens),
@@ -930,8 +1075,17 @@ def get_task_results_detail(
             output_tokens=result.output_tokens,
             score=result.score,
             recall=result.recall,
-            accuracy=result.accuracy,
+            precision=result.precision,
             score_reason=result.score_reason,
+            tp_count=result.tp_count,
+            fp_count=result.fp_count,
+            fn_count=result.fn_count,
+            ground_truth_unit_count=result.ground_truth_unit_count,
+            predicted_unit_count=result.predicted_unit_count,
+            is_scorable=result.is_scorable,
+            is_empty_sample=result.is_empty_sample,
+            empty_sample_passed=result.empty_sample_passed,
+            metric_version=result.metric_version,
             scoring_status=result.scoring_status,
             scoring_error_message=result.scoring_error_message,
             scoring_model=result.scoring_model,
@@ -947,14 +1101,27 @@ def get_task_results_detail(
             ground_truth=annotation.ground_truth if annotation else None
         ))
 
-    return TaskResultDetailListResponse(
+    response = TaskResultDetailListResponse(
         items=response_list,
         total=total,
-        avg_recall=float(score_avg_row[0]) if score_avg_row and score_avg_row[0] is not None else None,
-        avg_accuracy=float(score_avg_row[1]) if score_avg_row and score_avg_row[1] is not None else None,
         avg_input_tokens=float(token_avg_row[0]) if token_avg_row and token_avg_row[0] is not None else None,
         avg_output_tokens=float(token_avg_row[1]) if token_avg_row and token_avg_row[1] is not None else None,
     )
+    if score_stats:
+        _attach_task_metric_summary(
+            response,
+            sum_tp=score_stats.sum_tp,
+            sum_fp=score_stats.sum_fp,
+            sum_fn=score_stats.sum_fn,
+            macro_recall=score_stats.macro_recall,
+            macro_precision=score_stats.macro_precision,
+            scorable_count=score_stats.scorable_count,
+            empty_sample_count=score_stats.empty_sample_count,
+            empty_sample_passed_count=score_stats.empty_sample_passed_count,
+            unscorable_count=score_stats.unscorable_count,
+            total_count=score_stats.total_count,
+        )
+    return response
 
 
 @router.get("/{task_id}/results/selection", response_model=TaskResultSelectionResponse, summary="获取筛选结果ID集合")

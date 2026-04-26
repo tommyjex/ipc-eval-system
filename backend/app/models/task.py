@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, Text, Enum, DateTime, ForeignKey, Index, func, Float
+from sqlalchemy import Boolean, Column, BigInteger, String, Text, Enum, DateTime, ForeignKey, Index, func, Float
 from sqlalchemy.orm import relationship
 from app.models.base import Base
 
@@ -48,8 +48,17 @@ class TaskResult(Base):
     output_tokens = Column(BigInteger, comment="输出 tokens")
     score = Column(BigInteger, comment="评分")
     recall = Column(Float, comment="召回率")
-    accuracy = Column(Float, comment="准确率")
+    precision = Column("precision", Float, quote=True, comment="精确率")
     score_reason = Column(Text, comment="评分原因")
+    tp_count = Column(BigInteger, comment="命中数量")
+    fp_count = Column(BigInteger, comment="误报数量")
+    fn_count = Column(BigInteger, comment="漏检数量")
+    ground_truth_unit_count = Column(BigInteger, comment="标注单元数")
+    predicted_unit_count = Column(BigInteger, comment="预测单元数")
+    is_scorable = Column(Boolean, nullable=False, default=True, server_default="1", comment="是否可参与评分")
+    is_empty_sample = Column(Boolean, nullable=False, default=False, server_default="0", comment="是否为空样本")
+    empty_sample_passed = Column(Boolean, nullable=False, default=False, server_default="0", comment="空样本是否判断正确")
+    metric_version = Column(String(32), comment="评分口径版本")
     scoring_status = Column(String(20), nullable=False, default="not_scored", comment="评分状态")
     scoring_error_message = Column(Text, comment="评分失败原因")
     scoring_model = Column(String(100), comment="评分模型")

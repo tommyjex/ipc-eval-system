@@ -1,9 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { taskApi, datasetApi, scoringTemplateApi, promptTemplateApi } from '../../api';
-import type { EvaluationTask, TaskStatus, Dataset, DatasetScene, ModelProvider, ScoringTemplate, PromptTemplate } from '../../api';
+import { taskApi, datasetApi, promptTemplateApi } from '../../api';
+import type { EvaluationTask, TaskStatus, Dataset, DatasetScene, ModelProvider, PromptTemplate } from '../../api';
 
-const getRecentTemplateStorageKey = (scene: DatasetScene) => `recent-scoring-template:${scene}`;
 const getRecentPromptTemplateStorageKey = (scene: DatasetScene) => `recent-prompt-template:${scene}`;
 const normalizeFps = (value: number) => Math.max(0.01, Math.min(30, Number(value.toFixed(2))));
 const formatMetric = (value: number | null) => (value == null ? '-' : `${value.toFixed(2)}%`);
@@ -140,7 +139,6 @@ export const TaskListPage: React.FC = () => {
     dataset_id: string;
     model_provider: ModelProvider;
     target_model: string;
-    scoring_criteria: string;
     prompt: string;
     fps: number;
   }>({
@@ -148,32 +146,15 @@ export const TaskListPage: React.FC = () => {
     dataset_id: '',
     model_provider: 'volcengine',
     target_model: '',
-    scoring_criteria: '',
     prompt: '',
     fps: 0.3,
   });
   const [creating, setCreating] = useState(false);
-  const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [showPromptTemplateModal, setShowPromptTemplateModal] = useState(false);
-  const [templates, setTemplates] = useState<ScoringTemplate[]>([]);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
-  const [templateLoading, setTemplateLoading] = useState(false);
   const [promptTemplateLoading, setPromptTemplateLoading] = useState(false);
-  const [templateSaving, setTemplateSaving] = useState(false);
   const [promptTemplateSaving, setPromptTemplateSaving] = useState(false);
-  const [editingTemplateId, setEditingTemplateId] = useState<number | null>(null);
   const [editingPromptTemplateId, setEditingPromptTemplateId] = useState<number | null>(null);
-  const [templateForm, setTemplateForm] = useState<{
-    name: string;
-    scene: DatasetScene;
-    description: string;
-    content: string;
-  }>({
-    name: '',
-    scene: 'video_retrieval',
-    description: '',
-    content: '',
-  });
   const [promptTemplateForm, setPromptTemplateForm] = useState<{
     name: string;
     scene: DatasetScene;
@@ -192,8 +173,7 @@ export const TaskListPage: React.FC = () => {
   const [datasetFilter, setDatasetFilter] = useState<string[]>([]);
   const [providerFilter, setProviderFilter] = useState<ModelProvider[]>([]);
   const [targetModelFilter, setTargetModelFilter] = useState<string[]>([]);
-  const [sortOption, setSortOption] = useState<'default' | 'avg_recall_desc' | 'avg_recall_asc' | 'avg_accuracy_desc' | 'avg_accuracy_asc'>('default');
-  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [sortOption, setSortOption] = useState<'default' | 'micro_recall_desc' | 'micro_recall_asc' | 'micro_precision_desc' | 'micro_precision_asc'>('default');
   const [selectedPromptTemplateId, setSelectedPromptTemplateId] = useState('');
 
   const sceneLabels: Record<DatasetScene, string> = {
@@ -248,15 +228,15 @@ export const TaskListPage: React.FC = () => {
     try {
       const [sortBy, sortOrder] = sortOption === 'default'
         ? [undefined, undefined]
-        : sortOption.split('_').slice(0, 2).join('_') === 'avg_recall'
-          ? ['avg_recall', sortOption.endsWith('_asc') ? 'asc' : 'desc']
-          : ['avg_accuracy', sortOption.endsWith('_asc') ? 'asc' : 'desc'];
+        : sortOption.split('_').slice(0, 2).join('_') === 'micro_recall'
+          ? ['micro_recall', sortOption.endsWith('_asc') ? 'asc' : 'desc']
+          : ['micro_precision', sortOption.endsWith('_asc') ? 'asc' : 'desc'];
       const res = await taskApi.list({
         dataset_id: datasetFilter.length > 0 ? datasetFilter.map((value) => parseInt(value, 10)) : undefined,
         model_provider: providerFilter.length > 0 ? providerFilter : undefined,
         target_model: targetModelFilter.length > 0 ? targetModelFilter : undefined,
         status: statusFilter.length > 0 ? statusFilter : undefined,
-        sort_by: sortBy as 'avg_recall' | 'avg_accuracy' | undefined,
+        sort_by: sortBy as 'micro_recall' | 'micro_precision' | undefined,
         sort_order: sortOrder as 'asc' | 'desc' | undefined,
         page,
         page_size: pageSize,
@@ -279,18 +259,6 @@ export const TaskListPage: React.FC = () => {
     }
   };
 
-  const fetchTemplates = async () => {
-    setTemplateLoading(true);
-    try {
-      const res = await scoringTemplateApi.list();
-      setTemplates(res.items);
-    } catch (err) {
-      console.error('获取评分模板失败:', err);
-    } finally {
-      setTemplateLoading(false);
-    }
-  };
-
   const fetchPromptTemplates = async () => {
     setPromptTemplateLoading(true);
     try {
@@ -306,7 +274,6 @@ export const TaskListPage: React.FC = () => {
   useEffect(() => {
     fetchTasks();
     fetchDatasets();
-    fetchTemplates();
     fetchPromptTemplates();
   }, [page, pageSize, statusFilter, datasetFilter, providerFilter, targetModelFilter, sortOption]);
 
@@ -331,13 +298,11 @@ export const TaskListPage: React.FC = () => {
         name: newTask.name,
         target_model: newTask.target_model,
         model_provider: newTask.model_provider,
-        scoring_criteria: newTask.scoring_criteria || undefined,
         prompt: newTask.prompt || undefined,
         fps: newTask.fps,
       });
       setShowCreateModal(false);
-      setNewTask({ name: '', dataset_id: '', model_provider: 'volcengine', target_model: '', scoring_criteria: '', prompt: '', fps: 0.3 });
-      setSelectedTemplateId('');
+      setNewTask({ name: '', dataset_id: '', model_provider: 'volcengine', target_model: '', prompt: '', fps: 0.3 });
       setSelectedPromptTemplateId('');
       fetchTasks();
     } catch (err) {
@@ -366,16 +331,6 @@ export const TaskListPage: React.FC = () => {
     }
   };
 
-  const resetTemplateForm = () => {
-    setEditingTemplateId(null);
-    setTemplateForm({
-      name: '',
-      scene: 'video_retrieval',
-      description: '',
-      content: '',
-    });
-  };
-
   const resetPromptTemplateForm = () => {
     setEditingPromptTemplateId(null);
     setPromptTemplateForm({
@@ -383,40 +338,6 @@ export const TaskListPage: React.FC = () => {
       scene: 'video_retrieval',
       description: '',
       content: '',
-    });
-  };
-
-  const handleSaveTemplate = async () => {
-    if (!templateForm.name.trim() || !templateForm.content.trim()) return;
-    setTemplateSaving(true);
-    try {
-      const payload = {
-        name: templateForm.name.trim(),
-        scene: templateForm.scene,
-        description: templateForm.description.trim() || undefined,
-        content: templateForm.content.trim(),
-      };
-      if (editingTemplateId) {
-        await scoringTemplateApi.update(editingTemplateId, payload);
-      } else {
-        await scoringTemplateApi.create(payload);
-      }
-      await fetchTemplates();
-      resetTemplateForm();
-    } catch (err) {
-      alert('保存模板失败: ' + (err instanceof Error ? err.message : '未知错误'));
-    } finally {
-      setTemplateSaving(false);
-    }
-  };
-
-  const handleEditTemplate = (template: ScoringTemplate) => {
-    setEditingTemplateId(template.id);
-    setTemplateForm({
-      name: template.name,
-      scene: template.scene,
-      description: template.description || '',
-      content: template.content,
     });
   };
 
@@ -454,19 +375,6 @@ export const TaskListPage: React.FC = () => {
     });
   };
 
-  const handleDeleteTemplate = async (templateId: number) => {
-    if (!confirm('确定要删除这个评分模板吗？')) return;
-    try {
-      await scoringTemplateApi.delete(templateId);
-      await fetchTemplates();
-      if (editingTemplateId === templateId) {
-        resetTemplateForm();
-      }
-    } catch (err) {
-      alert('删除模板失败: ' + (err instanceof Error ? err.message : '未知错误'));
-    }
-  };
-
   const handleDeletePromptTemplate = async (templateId: number) => {
     if (!confirm('确定要删除这个 Prompt 模板吗？')) return;
     try {
@@ -482,9 +390,6 @@ export const TaskListPage: React.FC = () => {
 
   const selectedDataset = datasets.find((item) => String(item.id) === newTask.dataset_id);
   const selectedScene = selectedDataset?.scene || null;
-  const availableTemplates = selectedScene
-    ? templates.filter((template) => template.scene === selectedScene)
-    : [];
   const availablePromptTemplates = selectedScene
     ? promptTemplates.filter((template) => template.scene === selectedScene)
     : [];
@@ -492,20 +397,8 @@ export const TaskListPage: React.FC = () => {
   useEffect(() => {
     if (!showCreateModal) return;
     if (!selectedScene) {
-      setSelectedTemplateId('');
       setSelectedPromptTemplateId('');
       return;
-    }
-
-    const recentTemplateId = window.localStorage.getItem(getRecentTemplateStorageKey(selectedScene));
-    const recentTemplate = availableTemplates.find((template) => String(template.id) === recentTemplateId);
-    if (!recentTemplate) {
-      setSelectedTemplateId('');
-    } else {
-      setSelectedTemplateId(String(recentTemplate.id));
-      if (!newTask.scoring_criteria.trim()) {
-        setNewTask((prev) => ({ ...prev, scoring_criteria: recentTemplate.content }));
-      }
     }
 
     const recentPromptTemplateId = window.localStorage.getItem(getRecentPromptTemplateStorageKey(selectedScene));
@@ -519,7 +412,7 @@ export const TaskListPage: React.FC = () => {
     if (!newTask.prompt.trim()) {
       setNewTask((prev) => ({ ...prev, prompt: recentPromptTemplate.content }));
     }
-  }, [showCreateModal, selectedScene, availableTemplates, availablePromptTemplates]);
+  }, [showCreateModal, selectedScene, availablePromptTemplates]);
 
   const getStatusBadge = (status: TaskStatus) => {
     const styles: Record<TaskStatus, string> = {
@@ -535,7 +428,7 @@ export const TaskListPage: React.FC = () => {
       failed: '失败',
     };
     return (
-      <span className={`px-2 py-1 rounded text-xs ${styles[status]}`}>
+      <span className={`rounded px-2 py-1 text-xs ${styles[status]}`}>
         {labels[status]}
       </span>
     );
@@ -590,18 +483,12 @@ export const TaskListPage: React.FC = () => {
               className="rounded border px-3 py-2 text-sm"
             >
               <option value="default">默认</option>
-              <option value="avg_recall_desc">召回率降序</option>
-              <option value="avg_recall_asc">召回率升序</option>
-              <option value="avg_accuracy_desc">准确率降序</option>
-              <option value="avg_accuracy_asc">准确率升序</option>
+              <option value="micro_recall_desc">召回率降序</option>
+              <option value="micro_recall_asc">召回率升序</option>
+              <option value="micro_precision_desc">精确率降序</option>
+              <option value="micro_precision_asc">精确率升序</option>
             </select>
           </div>
-          <button
-            onClick={() => setShowTemplateModal(true)}
-            className="px-4 py-2 border rounded hover:bg-gray-50"
-          >
-            评分模板管理
-          </button>
           <button
             onClick={() => setShowPromptTemplateModal(true)}
             className="px-4 py-2 border rounded hover:bg-gray-50"
@@ -636,7 +523,7 @@ export const TaskListPage: React.FC = () => {
         <div className="text-center py-10">加载中...</div>
       ) : (
         <div className="bg-white rounded-lg shadow overflow-x-auto">
-          <table className="min-w-[1200px] w-full">
+          <table className="min-w-[1460px] w-full">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left">任务名称</th>
@@ -651,7 +538,7 @@ export const TaskListPage: React.FC = () => {
                     />
                   </div>
                 </th>
-                <th className="px-4 py-3 text-left">
+                <th className="w-[80px] px-3 py-3 text-left">
                   <div className="flex items-center gap-2 whitespace-nowrap">
                     <span className="whitespace-nowrap">模型供应商</span>
                     <MultiSelectDropdown
@@ -662,7 +549,7 @@ export const TaskListPage: React.FC = () => {
                     />
                   </div>
                 </th>
-                <th className="px-4 py-3 text-left">
+                <th className="min-w-[240px] whitespace-nowrap px-4 py-3 text-left">
                   <div className="flex items-center gap-2 whitespace-nowrap">
                     <span className="whitespace-nowrap">目标模型</span>
                     <MultiSelectDropdown
@@ -673,7 +560,7 @@ export const TaskListPage: React.FC = () => {
                     />
                   </div>
                 </th>
-                <th className="px-4 py-3 text-left">
+                <th className="w-[64px] px-3 py-3 text-left">
                   <div className="flex items-center gap-2 whitespace-nowrap">
                     <span className="whitespace-nowrap">状态</span>
                     <MultiSelectDropdown
@@ -684,12 +571,12 @@ export const TaskListPage: React.FC = () => {
                     />
                   </div>
                 </th>
-                <th className="px-4 py-3 text-left">平均召回率</th>
-                <th className="px-4 py-3 text-left">平均准确率</th>
-                <th className="px-4 py-3 text-left">平均输入 Token</th>
-                <th className="px-4 py-3 text-left">平均输出 Token</th>
+                <th className="px-4 py-3 text-left whitespace-nowrap">Micro 召回率</th>
+                <th className="px-4 py-3 text-left whitespace-nowrap">Micro 精确率</th>
+                <th className="px-4 py-3 text-left whitespace-nowrap">平均输入 Token</th>
+                <th className="px-4 py-3 text-left whitespace-nowrap">平均输出 Token</th>
                 <th className="px-4 py-3 text-left">创建时间</th>
-                <th className="px-4 py-3 text-left">操作</th>
+                <th className="min-w-[160px] whitespace-nowrap px-4 py-3 text-left">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -711,18 +598,18 @@ export const TaskListPage: React.FC = () => {
                     </span>
                   </td>
                   <td className="px-4 py-3">{getDatasetLabel(task.dataset_id)}</td>
-                  <td className="px-4 py-3">{getProviderLabel(task.model_provider)}</td>
-                  <td className="px-4 py-3">{task.target_model}</td>
-                  <td className="px-4 py-3">{getStatusBadge(task.status)}</td>
-                  <td className="px-4 py-3">{formatMetric(task.avg_recall)}</td>
-                  <td className="px-4 py-3">{formatMetric(task.avg_accuracy)}</td>
+                  <td className="w-[80px] px-3 py-3">{getProviderLabel(task.model_provider)}</td>
+                  <td className="min-w-[240px] whitespace-nowrap px-4 py-3">{task.target_model}</td>
+                  <td className="w-[64px] px-3 py-3">{getStatusBadge(task.status)}</td>
+                  <td className="px-4 py-3">{formatMetric(task.micro_recall)}</td>
+                  <td className="px-4 py-3">{formatMetric(task.micro_precision)}</td>
                   <td className="px-4 py-3">{formatTokenMetric(task.avg_input_tokens)}</td>
                   <td className="px-4 py-3">{formatTokenMetric(task.avg_output_tokens)}</td>
                   <td className="px-4 py-3">
                     {new Date(task.created_at).toLocaleString('zh-CN')}
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="flex space-x-2">
+                  <td className="min-w-[160px] whitespace-nowrap px-4 py-3">
+                    <div className="flex items-center space-x-2 whitespace-nowrap">
                       <button
                         onClick={() => navigate(`/tasks/${task.id}`)}
                         className="text-blue-600 hover:text-blue-800"
@@ -834,48 +721,6 @@ export const TaskListPage: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">评分标准</label>
-                {selectedScene ? (
-                  <div className="mb-2 flex items-center gap-2">
-                    <select
-                      value={selectedTemplateId}
-                      onChange={(e) => {
-                        setSelectedTemplateId(e.target.value);
-                        const template = availableTemplates.find((item) => String(item.id) === e.target.value);
-                        if (template) {
-                          window.localStorage.setItem(getRecentTemplateStorageKey(selectedScene), String(template.id));
-                          setNewTask({ ...newTask, scoring_criteria: template.content });
-                        }
-                      }}
-                      className="w-full px-3 py-2 border rounded"
-                    >
-                      <option value="">选择{sceneLabels[selectedScene]}模板</option>
-                      {availableTemplates.map((template) => (
-                        <option key={template.id} value={template.id}>
-                          {template.name}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => setShowTemplateModal(true)}
-                      className="shrink-0 rounded border px-3 py-2 text-sm hover:bg-gray-50"
-                    >
-                      管理模板
-                    </button>
-                  </div>
-                ) : (
-                  <p className="mb-2 text-xs text-gray-500">请先选择带业务场景的评测集，再选择评分模板。</p>
-                )}
-                <textarea
-                  value={newTask.scoring_criteria}
-                  onChange={(e) => setNewTask({ ...newTask, scoring_criteria: e.target.value })}
-                  className="w-full px-3 py-2 border rounded"
-                  rows={3}
-                  placeholder="可选，输入评分标准"
-                />
-              </div>
-              <div>
                 <label className="block text-sm font-medium mb-1">Prompt</label>
                 {selectedScene ? (
                   <div className="mb-2 flex items-center gap-2">
@@ -922,7 +767,6 @@ export const TaskListPage: React.FC = () => {
               <button
                 onClick={() => {
                   setShowCreateModal(false);
-                  setSelectedTemplateId('');
                   setSelectedPromptTemplateId('');
                 }}
                 className="px-4 py-2 border rounded hover:bg-gray-50"
@@ -937,134 +781,6 @@ export const TaskListPage: React.FC = () => {
                 {creating ? '创建中...' : '创建'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {showTemplateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="max-h-[90vh] w-full max-w-5xl overflow-auto rounded-lg bg-white p-6 shadow-lg">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-xl font-bold">评分标准模板管理</h2>
-              <button
-                onClick={() => {
-                  setShowTemplateModal(false);
-                  resetTemplateForm();
-                }}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="mb-6 grid gap-4 rounded border p-4 md:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium">模板名称</label>
-                <input
-                  type="text"
-                  value={templateForm.name}
-                  onChange={(e) => setTemplateForm({ ...templateForm, name: e.target.value })}
-                  className="w-full rounded border px-3 py-2"
-                  placeholder="请输入模板名称"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">业务场景</label>
-                <select
-                  value={templateForm.scene}
-                  onChange={(e) => setTemplateForm({ ...templateForm, scene: e.target.value as DatasetScene })}
-                  className="w-full rounded border px-3 py-2"
-                >
-                  <option value="video_retrieval">视频检索</option>
-                  <option value="smart_alert">智能告警</option>
-                </select>
-              </div>
-              <div className="md:col-span-2">
-                <label className="mb-1 block text-sm font-medium">模板描述</label>
-                <input
-                  type="text"
-                  value={templateForm.description}
-                  onChange={(e) => setTemplateForm({ ...templateForm, description: e.target.value })}
-                  className="w-full rounded border px-3 py-2"
-                  placeholder="可选，输入模板描述"
-                />
-              </div>
-              <div className="md:col-span-2">
-                <label className="mb-1 block text-sm font-medium">评分标准内容</label>
-                <textarea
-                  value={templateForm.content}
-                  onChange={(e) => setTemplateForm({ ...templateForm, content: e.target.value })}
-                  rows={6}
-                  className="w-full rounded border px-3 py-2"
-                  placeholder="请输入评分标准模板内容"
-                />
-              </div>
-              <div className="md:col-span-2 flex justify-end gap-3">
-                {editingTemplateId && (
-                  <button
-                    type="button"
-                    onClick={resetTemplateForm}
-                    className="rounded border px-4 py-2 hover:bg-gray-50"
-                  >
-                    取消编辑
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={handleSaveTemplate}
-                  disabled={templateSaving || !templateForm.name.trim() || !templateForm.content.trim()}
-                  className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:bg-gray-400"
-                >
-                  {templateSaving ? '保存中...' : (editingTemplateId ? '保存模板' : '创建模板')}
-                </button>
-              </div>
-            </div>
-
-            {templateLoading ? (
-              <div className="py-10 text-center text-gray-500">模板加载中...</div>
-            ) : templates.length === 0 ? (
-              <div className="py-10 text-center text-gray-500">暂无评分标准模板</div>
-            ) : (
-              <div className="overflow-hidden rounded border">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left">模板名称</th>
-                      <th className="px-4 py-3 text-left">业务场景</th>
-                      <th className="px-4 py-3 text-left">模板描述</th>
-                      <th className="px-4 py-3 text-left">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {templates.map((template) => (
-                      <tr key={template.id} className="border-t">
-                        <td className="px-4 py-3">{template.name}</td>
-                        <td className="px-4 py-3">{sceneLabels[template.scene]}</td>
-                        <td className="px-4 py-3 text-sm text-gray-600">{template.description || '-'}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex gap-3">
-                            <button
-                              type="button"
-                              onClick={() => handleEditTemplate(template)}
-                              className="text-blue-600 hover:text-blue-800"
-                            >
-                              编辑
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteTemplate(template.id)}
-                              className="text-red-600 hover:text-red-800"
-                            >
-                              删除
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
           </div>
         </div>
       )}

@@ -207,23 +207,23 @@ class ArkClient:
 
     def _extract_scoring_fields(self, text: str) -> dict:
         recall_match = re.search(r'"recall"\s*:\s*([0-9]+(?:\.[0-9]+)?)|召回率\s*[:：]\s*([0-9]+(?:\.[0-9]+)?)', text)
-        accuracy_match = re.search(r'"accuracy"\s*:\s*([0-9]+(?:\.[0-9]+)?)|准确率\s*[:：]\s*([0-9]+(?:\.[0-9]+)?)', text)
+        precision_match = re.search(r'"precision"\s*:\s*([0-9]+(?:\.[0-9]+)?)|精确率\s*[:：]\s*([0-9]+(?:\.[0-9]+)?)', text)
         reason_match = re.search(r'"reason"\s*:\s*"([\s\S]*?)"|评分理由\s*[:：]\s*([\s\S]+)', text)
 
         recall_value = "0"
         if recall_match:
             recall_value = recall_match.group(1) or recall_match.group(2) or "0"
 
-        accuracy_value = "0"
-        if accuracy_match:
-            accuracy_value = accuracy_match.group(1) or accuracy_match.group(2) or "0"
+        precision_value = "0"
+        if precision_match:
+            precision_value = precision_match.group(1) or precision_match.group(2) or "0"
         reason_value = ""
         if reason_match:
             reason_value = (reason_match.group(1) or reason_match.group(2) or "").strip().strip('",')
 
         return {
             "recall": float(recall_value),
-            "accuracy": float(accuracy_value),
+            "precision": float(precision_value),
             "reason": reason_value,
         }
 
@@ -322,9 +322,9 @@ class ArkClient:
 2. 模型输出（model_output）
 3. 评分标准
 
-评分要求：
-- recall 表示召回率，范围 0 到 100
-- accuracy 表示准确率，范围 0 到 100
+        评分要求：
+        - recall 表示召回率，范围 0 到 100
+        - precision 表示精确率，范围 0 到 100
 - reason 用中文简洁说明评分理由
 - 只返回 JSON，不要输出任何额外说明
 - 如果输入内容是 JSON，且包含 description、title、event 等字段，请优先按 JSON 解析
@@ -342,7 +342,7 @@ class ArkClient:
 请严格按以下 JSON 结构返回：
 {{
   "recall": 0,
-  "accuracy": 0,
+          "precision": 0,
   "reason": "评分理由"
 }}
 """
@@ -355,11 +355,11 @@ class ArkClient:
         except Exception:
             parsed = self._extract_scoring_fields(response_text)
         recall = max(0.0, min(100.0, float(parsed.get("recall", 0))))
-        accuracy = max(0.0, min(100.0, float(parsed.get("accuracy", 0))))
+        precision = max(0.0, min(100.0, float(parsed.get("precision", 0))))
         reason = str(parsed.get("reason", "")).strip()
         return {
             "recall": recall,
-            "accuracy": accuracy,
+            "precision": precision,
             "reason": reason,
         }
 
