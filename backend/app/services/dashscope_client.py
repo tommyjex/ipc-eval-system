@@ -233,32 +233,68 @@ class DashScopeClient:
             "output_tokens": int(output_tokens) if output_tokens is not None else None,
         }
 
+    def _messages_contain_json_keyword(self, messages: list[dict[str, Any]]) -> bool:
+        for message in messages:
+            content = message.get("content")
+            if isinstance(content, str) and "json" in content.lower():
+                return True
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict):
+                        text = item.get("text")
+                        if isinstance(text, str) and "json" in text.lower():
+                            return True
+        return False
+
+    def _ensure_json_keyword(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if self._messages_contain_json_keyword(messages):
+            return messages
+        return [
+            {
+                "role": "system",
+                "content": "请以JSON格式输出，仅返回合法JSON对象，不要输出任何额外说明。",
+            },
+            *messages,
+        ]
+
     def annotate(
         self,
         content: dict[str, Any],
         model: Optional[str] = None,
+        structured_output_json: bool = False,
     ) -> str:
-        return self.annotate_with_usage(content, model)["text"]
+        return self.annotate_with_usage(
+            content,
+            model,
+            structured_output_json=structured_output_json,
+        )["text"]
 
     def annotate_with_usage(
         self,
         content: dict[str, Any],
         model: Optional[str] = None,
+        structured_output_json: bool = False,
     ) -> dict[str, Any]:
         if content["mode"] == "text":
             endpoint = "/services/aigc/text-generation/generation"
         else:
             endpoint = "/services/aigc/multimodal-generation/generation"
 
+        messages = content["messages"]
+        if structured_output_json:
+            messages = self._ensure_json_keyword(messages)
+
         payload = {
             "model": model or self.default_model,
-            "input": {"messages": content["messages"]},
+            "input": {"messages": messages},
             "parameters": {
                 "result_format": "message",
                 "enable_thinking": False,
                 "max_tokens": 1000,
             },
         }
+        if structured_output_json:
+            payload["response_format"] = {"type": "json_object"}
         response_payload = self._post(endpoint, payload)
         if self.debug_response:
             # Avoid log flooding: print full JSON once per request but keep it on one line.
@@ -283,6 +319,7 @@ class DashScopeClient:
         model: Optional[str] = None,
         max_frames: int = 5,
         fps: float = DEFAULT_VIDEO_FPS,
+        structured_output_json: bool = False,
     ) -> str:
         return self.annotate_gif_with_usage(
             gif_url,
@@ -291,6 +328,7 @@ class DashScopeClient:
             model,
             max_frames=max_frames,
             fps=fps,
+            structured_output_json=structured_output_json,
         )["text"]
 
     def annotate_gif_with_usage(
@@ -301,6 +339,7 @@ class DashScopeClient:
         model: Optional[str] = None,
         max_frames: int = 5,
         fps: float = DEFAULT_VIDEO_FPS,
+        structured_output_json: bool = False,
     ) -> dict[str, Any]:
         frame_urls = self.extract_gif_frames(gif_url, max_frames=max_frames)
         content = self.build_annotation_content(
@@ -311,7 +350,11 @@ class DashScopeClient:
             gif_frame_urls=frame_urls or None,
             fps=fps,
         )
-        return self.annotate_with_usage(content, model)
+        return self.annotate_with_usage(
+            content,
+            model,
+            structured_output_json=structured_output_json,
+        )
 
 
 _dashscope_client: Optional[DashScopeClient] = None

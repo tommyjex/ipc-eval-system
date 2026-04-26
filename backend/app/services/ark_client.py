@@ -137,9 +137,14 @@ class ArkClient:
     def annotate(
         self,
         content: list[dict],
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        structured_output_json: bool = False,
     ) -> str:
-        return self.annotate_with_usage(content, model)["text"]
+        return self.annotate_with_usage(
+            content,
+            model,
+            structured_output_json=structured_output_json,
+        )["text"]
 
     def _extract_usage(self, response: Any) -> dict[str, Optional[int]]:
         usage = getattr(response, "usage", None)
@@ -166,18 +171,23 @@ class ArkClient:
     def annotate_with_usage(
         self,
         content: list[dict],
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        structured_output_json: bool = False,
     ) -> dict[str, Any]:
-        response = self.client.responses.create(
-            model=model or self.default_model,
-            input=[
+        request_kwargs: dict[str, Any] = {
+            "model": model or self.default_model,
+            "input": [
                 {
                     "role": "user",
                     "content": content
                 }
             ],
-            thinking={"type":"disabled"}
-        )
+            "thinking": {"type": "disabled"},
+        }
+        if structured_output_json:
+            request_kwargs["text"] = {"format": {"type": "json_object"}}
+
+        response = self.client.responses.create(**request_kwargs)
         text = ""
         for item in response.output:
             if item.type == "message" and item.role == "assistant":
@@ -276,6 +286,7 @@ class ArkClient:
         model: Optional[str] = None,
         max_frames: int = 5,
         fps: float = DEFAULT_VIDEO_FPS,
+        structured_output_json: bool = False,
     ) -> str:
         return self.annotate_gif_with_usage(
             gif_url,
@@ -284,6 +295,7 @@ class ArkClient:
             model,
             max_frames=max_frames,
             fps=fps,
+            structured_output_json=structured_output_json,
         )["text"]
 
     def annotate_gif_with_usage(
@@ -294,6 +306,7 @@ class ArkClient:
         model: Optional[str] = None,
         max_frames: int = 5,
         fps: float = DEFAULT_VIDEO_FPS,
+        structured_output_json: bool = False,
     ) -> dict[str, Any]:
         frame_urls = self.extract_gif_frames(gif_url, max_frames)
         
@@ -304,7 +317,11 @@ class ArkClient:
         else:
             content = self.build_annotation_content(gif_url, "gif", annotation_prompt, custom_tags, fps=fps)
         
-        return self.annotate_with_usage(content, model)
+        return self.annotate_with_usage(
+            content,
+            model,
+            structured_output_json=structured_output_json,
+        )
 
     def score_result(
         self,

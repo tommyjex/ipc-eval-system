@@ -461,6 +461,7 @@ def _run_single_task_result(
                     custom_tags,
                     target_model,
                     fps=fps,
+                    structured_output_json=True,
                 )
             else:
                 content = inference_client.build_annotation_content(
@@ -471,7 +472,11 @@ def _run_single_task_result(
                     fps=fps,
                     model_file_url=model_download_url,
                 )
-                inference_result = inference_client.annotate_with_usage(content, target_model)
+                inference_result = inference_client.annotate_with_usage(
+                    content,
+                    target_model,
+                    structured_output_json=True,
+                )
 
             db.refresh(result)
             if result.status != TaskResultStatus.running.value:
