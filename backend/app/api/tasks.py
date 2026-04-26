@@ -12,6 +12,7 @@ import time
 
 from app.core.config import get_settings
 from app.core.database import get_db, SessionLocal
+from app.api.auth import require_auth
 from app.models import EvaluationTask, TaskResult, Dataset, EvaluationData, Annotation
 from app.schemas.task import (
     EvaluationTaskCreate,
@@ -717,13 +718,18 @@ def _attach_task_metric_summary(
 
 
 @router.post("", response_model=EvaluationTaskResponse, summary="创建评测任务")
-def create_task(data: EvaluationTaskCreate, db: Session = Depends(get_db)):
+def create_task(
+    data: EvaluationTaskCreate,
+    db: Session = Depends(get_db),
+    username: str = Depends(require_auth),
+):
     dataset = db.query(Dataset).filter(Dataset.id == data.dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="评测集不存在")
     
     task = EvaluationTask(
         dataset_id=data.dataset_id,
+        username=username,
         name=data.name,
         target_model=data.target_model,
         model_provider=data.model_provider.value if data.model_provider else None,

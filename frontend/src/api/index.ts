@@ -289,6 +289,7 @@ export type ModelProvider = 'volcengine' | 'aliyun' | 'gemini' | 'openai' | 'aws
 export interface EvaluationTask {
   id: number;
   dataset_id: number;
+  username: string | null;
   name: string;
   target_model: string;
   model_provider: ModelProvider | null;

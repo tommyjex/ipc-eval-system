@@ -67,6 +67,7 @@ class EvaluationTaskScoreRequest(BaseModel):
 class EvaluationTaskResponse(EvaluationTaskBase):
     id: int
     dataset_id: int
+    username: Optional[str] = None
     status: TaskStatus
     micro_recall: Optional[float] = None
     micro_precision: Optional[float] = None

@@ -82,6 +82,23 @@ def _sync_task_result_metric_columns():
             )
 
 
+def _sync_evaluation_task_columns():
+    inspector = inspect(engine)
+    if "evaluation_tasks" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("evaluation_tasks")}
+    alter_statements: list[str] = []
+
+    if "username" not in existing_columns:
+        alter_statements.append("ALTER TABLE evaluation_tasks ADD COLUMN username VARCHAR(64) NULL COMMENT '创建用户名'")
+
+    with engine.begin() as connection:
+        for statement in alter_statements:
+            connection.execute(text(statement))
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
+    _sync_evaluation_task_columns()
     _sync_task_result_metric_columns()

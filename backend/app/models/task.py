@@ -8,6 +8,7 @@ class EvaluationTask(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     dataset_id = Column(BigInteger, ForeignKey("datasets.id", ondelete="CASCADE"), nullable=False, comment="评测集ID")
+    username = Column(String(64), nullable=True, comment="创建用户名")
     name = Column(String(255), nullable=False, comment="任务名称")
     target_model = Column(String(100), nullable=False, comment="目标模型")
     model_provider = Column(String(50), comment="模型供应商")

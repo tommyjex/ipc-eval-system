@@ -523,7 +523,7 @@ export const TaskListPage: React.FC = () => {
         <div className="text-center py-10">加载中...</div>
       ) : (
         <div className="bg-white rounded-lg shadow overflow-x-auto">
-          <table className="min-w-[1460px] w-full">
+          <table className="min-w-[1560px] w-full">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left">任务名称</th>
@@ -538,6 +538,7 @@ export const TaskListPage: React.FC = () => {
                     />
                   </div>
                 </th>
+                <th className="whitespace-nowrap px-4 py-3 text-left">用户名</th>
                 <th className="w-[80px] px-3 py-3 text-left">
                   <div className="flex items-center gap-2 whitespace-nowrap">
                     <span className="whitespace-nowrap">模型供应商</span>
@@ -582,7 +583,7 @@ export const TaskListPage: React.FC = () => {
             <tbody>
               {tasks.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="text-center py-10 text-gray-500">
+                  <td colSpan={12} className="text-center py-10 text-gray-500">
                     当前筛选条件下暂无评测任务
                   </td>
                 </tr>
@@ -598,6 +599,7 @@ export const TaskListPage: React.FC = () => {
                     </span>
                   </td>
                   <td className="px-4 py-3">{getDatasetLabel(task.dataset_id)}</td>
+                  <td className="whitespace-nowrap px-4 py-3">{task.username || '-'}</td>
                   <td className="w-[80px] px-3 py-3">{getProviderLabel(task.model_provider)}</td>
                   <td className="min-w-[240px] whitespace-nowrap px-4 py-3">{task.target_model}</td>
                   <td className="w-[64px] px-3 py-3">{getStatusBadge(task.status)}</td>
