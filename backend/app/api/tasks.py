@@ -1034,6 +1034,8 @@ def get_task_results_detail(
     page_size: int = Query(50, ge=1, le=100, description="每页数量"),
     status: Optional[list[TaskResultStatus]] = Query(None, description="任务运行状态"),
     scoring_status: Optional[list[TaskScoringStatus]] = Query(None, description="评分状态"),
+    sort_by: Optional[str] = Query(None, pattern="^(recall|precision)$", description="排序字段"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$", description="排序方向"),
     db: Session = Depends(get_db)
 ):
     task = db.query(EvaluationTask).filter(EvaluationTask.id == task_id).first()
@@ -1051,13 +1053,28 @@ def get_task_results_detail(
 
     total = result_query.count()
 
-    results = db.query(TaskResult, EvaluationData, Annotation)\
+    results_query = db.query(TaskResult, EvaluationData, Annotation)\
         .join(EvaluationData, TaskResult.data_id == EvaluationData.id)\
         .outerjoin(Annotation, EvaluationData.id == Annotation.data_id)\
         .filter(TaskResult.task_id == task_id)\
         .filter(TaskResult.status.in_(status_values) if status_values else True)\
-        .filter(TaskResult.scoring_status.in_(scoring_status_values) if scoring_status_values else True)\
-        .order_by(EvaluationData.id.asc())\
+        .filter(TaskResult.scoring_status.in_(scoring_status_values) if scoring_status_values else True)
+
+    if sort_by == "recall":
+        sort_column = TaskResult.recall
+    elif sort_by == "precision":
+        sort_column = TaskResult.precision
+    else:
+        sort_column = None
+
+    if sort_column is not None:
+        nulls_last = case((sort_column.is_(None), 1), else_=0).asc()
+        ordered_column = sort_column.asc() if sort_order == "asc" else sort_column.desc()
+        results_query = results_query.order_by(nulls_last, ordered_column, EvaluationData.id.asc())
+    else:
+        results_query = results_query.order_by(EvaluationData.id.asc())
+
+    results = results_query\
         .offset((page - 1) * page_size)\
         .limit(page_size)\
         .all()

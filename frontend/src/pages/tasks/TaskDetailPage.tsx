@@ -8,6 +8,9 @@ const normalizeFps = (value: number) => Math.max(0.01, Math.min(30, Number(value
 const SMART_SCORE_DEFER_MS = 1500;
 const SMART_SCORE_POLL_MS = 3000;
 type MultiSelectOption<T extends string> = { value: T; label: string };
+type MetricSortField = 'recall' | 'precision';
+type MetricSortOrder = 'asc' | 'desc';
+type MetricSortValue = '' | `${MetricSortField}:${MetricSortOrder}`;
 
 const RESULT_STATUS_OPTIONS: MultiSelectOption<TaskResultStatus>[] = [
   { value: 'pending', label: '待运行' },
@@ -20,6 +23,13 @@ const SCORING_STATUS_OPTIONS: MultiSelectOption<TaskScoringStatus>[] = [
   { value: 'scoring', label: '评分中' },
   { value: 'scored', label: '已评分' },
   { value: 'score_failed', label: '评分失败' },
+];
+const METRIC_SORT_OPTIONS: MultiSelectOption<MetricSortValue>[] = [
+  { value: '', label: '默认' },
+  { value: 'recall:desc', label: '降序' },
+  { value: 'recall:asc', label: '升序' },
+  { value: 'precision:desc', label: '降序' },
+  { value: 'precision:asc', label: '升序' },
 ];
 const formatNullableNumber = (value: number | null | undefined, digits = 1, suffix = '') =>
   (typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(digits)}${suffix}` : '-');
@@ -66,11 +76,13 @@ const MultiSelectDropdown = <T extends string>({
   options,
   value,
   onChange,
+  compact = false,
 }: {
   label: string;
   options: MultiSelectOption<T>[];
   value: T[];
   onChange: (next: T[]) => void;
+  compact?: boolean;
 }) => {
   const [open, setOpen] = useState(false);
   const [draftValue, setDraftValue] = useState<T[]>(value);
@@ -104,7 +116,7 @@ const MultiSelectDropdown = <T extends string>({
   const hasSelectedValue = value.length > 0;
 
   return (
-    <div ref={panelRef} className="relative min-w-[160px]">
+    <div ref={panelRef} className={`relative ${compact ? '' : 'min-w-[160px]'}`}>
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
@@ -172,6 +184,74 @@ const MultiSelectDropdown = <T extends string>({
   );
 };
 
+const SingleSelectDropdown = <T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: MultiSelectOption<T>[];
+  value: T;
+  onChange: (next: T) => void;
+}) => {
+  const [open, setOpen] = useState(false);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const hasSelectedValue = value !== '';
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!panelRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [open]);
+
+  const selectedLabel = options.find((option) => option.value === value)?.label ?? '默认';
+
+  return (
+    <div ref={panelRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className={`inline-flex items-center text-xs font-normal ${
+          hasSelectedValue ? 'text-orange-500 hover:text-orange-600' : 'text-gray-400 hover:text-gray-600'
+        }`}
+        aria-label={label}
+        title={`${label}: ${selectedLabel}`}
+      >
+        <span>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-2 w-28 rounded-md border bg-white p-1 shadow-lg">
+          {options.map((option) => {
+            const selected = option.value === value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs ${
+                  selected ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <span>{option.label}</span>
+                <span>{selected ? '✓' : ''}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const TaskDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -198,6 +278,7 @@ export const TaskDetailPage: React.FC = () => {
   const [pageSize, setPageSize] = useState<50 | 100>(50);
   const [resultStatusFilter, setResultStatusFilter] = useState<TaskResultStatus[]>([]);
   const [scoringStatusFilter, setScoringStatusFilter] = useState<TaskScoringStatus[]>([]);
+  const [metricSort, setMetricSort] = useState<MetricSortValue>('');
   const [microRecall, setMicroRecall] = useState<number | null>(null);
   const [microPrecision, setMicroPrecision] = useState<number | null>(null);
   const [macroRecall, setMacroRecall] = useState<number | null>(null);
@@ -267,6 +348,9 @@ export const TaskDetailPage: React.FC = () => {
   const fetchResults = async (options?: { silent?: boolean }) => {
     if (!id) return;
     const silent = options?.silent ?? false;
+    const [sortBy, sortOrder] = metricSort
+      ? (metricSort.split(':') as [MetricSortField, MetricSortOrder])
+      : [undefined, undefined];
     if (!silent) {
       setResultsLoading(true);
     }
@@ -277,6 +361,8 @@ export const TaskDetailPage: React.FC = () => {
         page_size: pageSize,
         status: resultStatusFilter.length > 0 ? resultStatusFilter : undefined,
         scoring_status: scoringStatusFilter.length > 0 ? scoringStatusFilter : undefined,
+        sort_by: sortBy,
+        sort_order: sortOrder,
       });
       const detailItems = Array.isArray(resultsRes)
         ? resultsRes
@@ -388,7 +474,7 @@ export const TaskDetailPage: React.FC = () => {
   useEffect(() => {
     if (!id || loading) return;
     fetchResults();
-  }, [id, page, pageSize, resultStatusFilter, scoringStatusFilter, loading]);
+  }, [id, page, pageSize, resultStatusFilter, scoringStatusFilter, metricSort, loading]);
 
   useEffect(() => {
     if (!saveSuccess) return;
@@ -403,7 +489,7 @@ export const TaskDetailPage: React.FC = () => {
       fetchResults({ silent: true });
     }, SMART_SCORE_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [task?.status, scoring, id, page, pageSize, resultStatusFilter, scoringStatusFilter]);
+  }, [task?.status, scoring, id, page, pageSize, resultStatusFilter, scoringStatusFilter, metricSort]);
 
   useEffect(() => {
     if (!editing || !datasetScene) {
@@ -969,13 +1055,14 @@ export const TaskDetailPage: React.FC = () => {
                 <th className="px-4 py-3 text-left">对象名称</th>
                 <th className="px-4 py-3 text-left">预览</th>
                 <th className="px-4 py-3 text-left">标注结果</th>
-                <th className="px-4 py-3 text-left w-20">
+                <th className="px-3 py-3 text-left whitespace-nowrap">
                   <div className="flex items-center gap-2 whitespace-nowrap">
                     <span className="whitespace-nowrap">评测状态</span>
                     <MultiSelectDropdown
                       label="评测状态"
                       options={RESULT_STATUS_OPTIONS}
                       value={resultStatusFilter}
+                      compact
                       onChange={(next) => {
                         setPage(1);
                         setResultStatusFilter(next);
@@ -984,13 +1071,14 @@ export const TaskDetailPage: React.FC = () => {
                   </div>
                 </th>
                 <th className="px-4 py-3 text-left">模型输出</th>
-                <th className="px-4 py-3 text-left w-20">
+                <th className="px-3 py-3 text-left whitespace-nowrap">
                   <div className="flex items-center gap-2 whitespace-nowrap">
                     <span className="whitespace-nowrap">评分状态</span>
                     <MultiSelectDropdown
                       label="评分状态"
                       options={SCORING_STATUS_OPTIONS}
                       value={scoringStatusFilter}
+                      compact
                       onChange={(next) => {
                         setPage(1);
                         setScoringStatusFilter(next);
@@ -1000,8 +1088,42 @@ export const TaskDetailPage: React.FC = () => {
                 </th>
                 <th className="px-4 py-3 text-left whitespace-nowrap">输入 Tokens</th>
                 <th className="px-4 py-3 text-left whitespace-nowrap">输出 Tokens</th>
-                <th className="px-4 py-3 text-left">召回率</th>
-                <th className="px-4 py-3 text-left">精确率</th>
+                <th className="px-4 py-3 text-left whitespace-nowrap">
+                  <div className="flex items-center gap-2">
+                    <span>召回率</span>
+                    <SingleSelectDropdown
+                      label="召回率排序"
+                      options={[
+                        METRIC_SORT_OPTIONS[0],
+                        METRIC_SORT_OPTIONS[1],
+                        METRIC_SORT_OPTIONS[2],
+                      ]}
+                      value={metricSort.startsWith('recall:') ? metricSort : ''}
+                      onChange={(next) => {
+                        setPage(1);
+                        setMetricSort(next);
+                      }}
+                    />
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-left whitespace-nowrap">
+                  <div className="flex items-center gap-2">
+                    <span>精确率</span>
+                    <SingleSelectDropdown
+                      label="精确率排序"
+                      options={[
+                        METRIC_SORT_OPTIONS[0],
+                        METRIC_SORT_OPTIONS[3],
+                        METRIC_SORT_OPTIONS[4],
+                      ]}
+                      value={metricSort.startsWith('precision:') ? metricSort : ''}
+                      onChange={(next) => {
+                        setPage(1);
+                        setMetricSort(next);
+                      }}
+                    />
+                  </div>
+                </th>
                 <th className="px-4 py-3 text-left">评分理由</th>
               </tr>
             </thead>

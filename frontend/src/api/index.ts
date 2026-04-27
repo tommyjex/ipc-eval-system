@@ -410,7 +410,17 @@ export const taskApi = {
     api.post<{ message: string; task_id: number; scored_count: number; skipped_count: number; failed_count: number; model: string }>(`/tasks/${taskId}/score`, data || {}),
   getResults: (taskId: number, params?: { page?: number; page_size?: number }) =>
     api.get<{ items: TaskResult[]; total: number }>(`/tasks/${taskId}/results`, params),
-  getResultsDetail: (taskId: number, params?: { page?: number; page_size?: number; status?: TaskResultStatus[]; scoring_status?: TaskScoringStatus[] }) =>
+  getResultsDetail: (
+    taskId: number,
+    params?: {
+      page?: number;
+      page_size?: number;
+      status?: TaskResultStatus[];
+      scoring_status?: TaskScoringStatus[];
+      sort_by?: 'recall' | 'precision';
+      sort_order?: 'asc' | 'desc';
+    },
+  ) =>
     api.get<TaskResultDetailListResponse>(`/tasks/${taskId}/results/detail`, params),
   getResultSelection: (taskId: number, params?: { status?: TaskResultStatus[]; scoring_status?: TaskScoringStatus[] }) =>
     api.get<TaskResultSelectionResponse>(`/tasks/${taskId}/results/selection`, params),
