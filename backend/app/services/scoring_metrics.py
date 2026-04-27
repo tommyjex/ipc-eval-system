@@ -23,6 +23,8 @@ class ParsedScoringInput:
     units: list[NormalizedUnit]
     parse_status: str
     raw_text: str
+    event_list_present: bool = False
+    event_list_count: Optional[int] = None
 
 
 def _normalize_text(value: str) -> str:
@@ -95,21 +97,26 @@ def _summarize_dict_unit(value: dict[str, Any]) -> tuple[str, str, str]:
     return explicit_key or canonical, canonical, summary
 
 
+def _to_units_from_json_list(value: list[Any]) -> list[NormalizedUnit]:
+    units: list[NormalizedUnit] = []
+    for item in value:
+        units.extend(_to_units_from_json(item))
+    return units
+
+
 def _to_units_from_json(value: Any) -> list[NormalizedUnit]:
     if isinstance(value, dict):
-        event_list = value.get("event") or value.get("events")
-        if isinstance(event_list, list):
-            return _to_units_from_json(event_list)
+        if "event" in value and isinstance(value["event"], list):
+            return _to_units_from_json_list(value["event"])
+        if "events" in value and isinstance(value["events"], list):
+            return _to_units_from_json_list(value["events"])
         key, canonical, summary = _summarize_dict_unit(value)
         if not canonical:
             return []
         return [NormalizedUnit(key=key, canonical=canonical, summary=summary, tokens=_build_tokens(key, canonical, summary))]
 
     if isinstance(value, list):
-        units: list[NormalizedUnit] = []
-        for item in value:
-            units.extend(_to_units_from_json(item))
-        return units
+        return _to_units_from_json_list(value)
 
     if isinstance(value, str):
         return _split_text_units(value, parse_status="fallback_parsed").units
@@ -154,6 +161,33 @@ def parse_scoring_input(text: str) -> ParsedScoringInput:
     if candidate:
         try:
             parsed = json.loads(candidate)
+            if isinstance(parsed, dict) and "event" in parsed and isinstance(parsed["event"], list):
+                units = _to_units_from_json_list(parsed["event"])
+                return ParsedScoringInput(
+                    units=units,
+                    parse_status="parsed",
+                    raw_text=raw_text,
+                    event_list_present=True,
+                    event_list_count=len(parsed["event"]),
+                )
+            if isinstance(parsed, dict) and "events" in parsed and isinstance(parsed["events"], list):
+                units = _to_units_from_json_list(parsed["events"])
+                return ParsedScoringInput(
+                    units=units,
+                    parse_status="parsed",
+                    raw_text=raw_text,
+                    event_list_present=True,
+                    event_list_count=len(parsed["events"]),
+                )
+            if isinstance(parsed, list):
+                units = _to_units_from_json_list(parsed)
+                return ParsedScoringInput(
+                    units=units,
+                    parse_status="parsed",
+                    raw_text=raw_text,
+                    event_list_present=True,
+                    event_list_count=len(parsed),
+                )
             units = _to_units_from_json(parsed)
             return ParsedScoringInput(units=units, parse_status="parsed", raw_text=raw_text)
         except json.JSONDecodeError:
@@ -207,8 +241,15 @@ def _format_reason(
     empty_sample_passed: bool,
 ) -> str:
     gt_status, pred_status = parse_statuses
+    if is_empty_sample and empty_sample_passed:
+        return "GT 的 event 列表为空，模型输出的 event 列表也为空，记为空样本判断正确，不参与主指标聚合。"
+
     if is_empty_sample:
-        return "标注结果和模型输出都没有可评测单元，记为空样本正确，不参与主指标聚合。"
+        parts = [f"解析状态: GT={gt_status}, 预测={pred_status}。", "GT 的 event 列表为空，但模型输出的 event 列表未正确判空。"]
+        if false_positive_units:
+            fp_summary = "；".join(unit.summary for unit in false_positive_units[:3])
+            parts.append(f"误报 {len(false_positive_units)} 项: {fp_summary}。")
+        return "".join(parts)
 
     parts = [f"解析状态: GT={gt_status}, 预测={pred_status}。"]
     if matched_pairs:
@@ -240,8 +281,10 @@ def compute_score_metrics(ground_truth: str, model_output: str) -> dict[str, Any
 
     gt_units = parsed_ground_truth.units
     predicted_units = parsed_model_output.units
-    is_empty_sample = len(gt_units) == 0 and len(predicted_units) == 0
-    empty_sample_passed = is_empty_sample
+    gt_event_empty = parsed_ground_truth.event_list_present and parsed_ground_truth.event_list_count == 0
+    pred_event_empty = parsed_model_output.event_list_present and parsed_model_output.event_list_count == 0
+    is_empty_sample = gt_event_empty
+    empty_sample_passed = gt_event_empty and pred_event_empty
     is_scorable = True
 
     matched_count, matched_pairs, missed_units, false_positive_units = _match_units(gt_units, predicted_units)
@@ -252,14 +295,14 @@ def compute_score_metrics(ground_truth: str, model_output: str) -> dict[str, Any
     recall = _compute_percentage(tp_count, tp_count + fn_count)
     precision = _compute_percentage(tp_count, tp_count + fp_count)
 
-    if len(gt_units) == 0 and len(predicted_units) > 0:
+    if gt_event_empty and len(predicted_units) > 0:
         precision = 0.0
         recall = None
+    elif gt_event_empty and pred_event_empty:
+        recall = None
+        precision = None
     elif len(gt_units) > 0 and len(predicted_units) == 0:
         recall = 0.0
-        precision = None
-    elif is_empty_sample:
-        recall = None
         precision = None
 
     if recall is None and precision is None:

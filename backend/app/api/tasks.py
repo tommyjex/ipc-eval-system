@@ -664,10 +664,11 @@ def _score_task_result_ids_concurrently(
 
 def _build_task_metric_stats_query(db: Session):
     scored_condition = TaskResult.scoring_status == TaskScoringStatus.scored.value
+    empty_and_passed_condition = TaskResult.is_empty_sample.is_(True) & TaskResult.empty_sample_passed.is_(True)
     aggregate_condition = (
         scored_condition
         & TaskResult.is_scorable.is_(True)
-        & TaskResult.is_empty_sample.is_(False)
+        & ~empty_and_passed_condition
     )
 
     return db.query(
@@ -1036,6 +1037,7 @@ def get_task_results_detail(
     scoring_status: Optional[list[TaskScoringStatus]] = Query(None, description="评分状态"),
     sort_by: Optional[str] = Query(None, pattern="^(recall|precision)$", description="排序字段"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="排序方向"),
+    empty_sample_failed_only: bool = Query(False, description="仅查看空样本未通过"),
     db: Session = Depends(get_db)
 ):
     task = db.query(EvaluationTask).filter(EvaluationTask.id == task_id).first()
@@ -1050,6 +1052,11 @@ def get_task_results_detail(
         result_query = result_query.filter(TaskResult.status.in_(status_values))
     if scoring_status_values:
         result_query = result_query.filter(TaskResult.scoring_status.in_(scoring_status_values))
+    if empty_sample_failed_only:
+        result_query = result_query.filter(
+            TaskResult.is_empty_sample.is_(True),
+            TaskResult.empty_sample_passed.is_(False),
+        )
 
     total = result_query.count()
 
@@ -1059,6 +1066,11 @@ def get_task_results_detail(
         .filter(TaskResult.task_id == task_id)\
         .filter(TaskResult.status.in_(status_values) if status_values else True)\
         .filter(TaskResult.scoring_status.in_(scoring_status_values) if scoring_status_values else True)
+    if empty_sample_failed_only:
+        results_query = results_query.filter(
+            TaskResult.is_empty_sample.is_(True),
+            TaskResult.empty_sample_passed.is_(False),
+        )
 
     if sort_by == "recall":
         sort_column = TaskResult.recall

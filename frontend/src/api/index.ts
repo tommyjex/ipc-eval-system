@@ -419,6 +419,7 @@ export const taskApi = {
       scoring_status?: TaskScoringStatus[];
       sort_by?: 'recall' | 'precision';
       sort_order?: 'asc' | 'desc';
+      empty_sample_failed_only?: 1;
     },
   ) =>
     api.get<TaskResultDetailListResponse>(`/tasks/${taskId}/results/detail`, params),

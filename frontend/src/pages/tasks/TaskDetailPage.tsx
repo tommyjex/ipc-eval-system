@@ -189,15 +189,23 @@ const SingleSelectDropdown = <T extends string>({
   options,
   value,
   onChange,
+  highlighted,
+  extraToggle,
 }: {
   label: string;
   options: MultiSelectOption<T>[];
   value: T;
   onChange: (next: T) => void;
+  highlighted?: boolean;
+  extraToggle?: {
+    label: string;
+    checked: boolean;
+    onToggle: () => void;
+  };
 }) => {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const hasSelectedValue = value !== '';
+  const hasSelectedValue = highlighted ?? value !== '';
 
   useEffect(() => {
     if (!open) return;
@@ -226,7 +234,7 @@ const SingleSelectDropdown = <T extends string>({
         <span>{open ? '▲' : '▼'}</span>
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-20 mt-2 w-28 rounded-md border bg-white p-1 shadow-lg">
+        <div className="absolute left-0 top-full z-20 mt-2 w-40 rounded-md border bg-white p-1 shadow-lg">
           {options.map((option) => {
             const selected = option.value === value;
             return (
@@ -246,6 +254,21 @@ const SingleSelectDropdown = <T extends string>({
               </button>
             );
           })}
+          {extraToggle && (
+            <>
+              <div className="my-1 border-t" />
+              <button
+                type="button"
+                onClick={extraToggle.onToggle}
+                className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs ${
+                  extraToggle.checked ? 'bg-orange-50 text-orange-700' : 'text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <span>{extraToggle.label}</span>
+                <span>{extraToggle.checked ? '✓' : ''}</span>
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -279,6 +302,7 @@ export const TaskDetailPage: React.FC = () => {
   const [resultStatusFilter, setResultStatusFilter] = useState<TaskResultStatus[]>([]);
   const [scoringStatusFilter, setScoringStatusFilter] = useState<TaskScoringStatus[]>([]);
   const [metricSort, setMetricSort] = useState<MetricSortValue>('');
+  const [emptySampleFailedOnly, setEmptySampleFailedOnly] = useState(false);
   const [microRecall, setMicroRecall] = useState<number | null>(null);
   const [microPrecision, setMicroPrecision] = useState<number | null>(null);
   const [macroRecall, setMacroRecall] = useState<number | null>(null);
@@ -363,6 +387,7 @@ export const TaskDetailPage: React.FC = () => {
         scoring_status: scoringStatusFilter.length > 0 ? scoringStatusFilter : undefined,
         sort_by: sortBy,
         sort_order: sortOrder,
+        empty_sample_failed_only: emptySampleFailedOnly ? 1 : undefined,
       });
       const detailItems = Array.isArray(resultsRes)
         ? resultsRes
@@ -474,7 +499,7 @@ export const TaskDetailPage: React.FC = () => {
   useEffect(() => {
     if (!id || loading) return;
     fetchResults();
-  }, [id, page, pageSize, resultStatusFilter, scoringStatusFilter, metricSort, loading]);
+  }, [id, page, pageSize, resultStatusFilter, scoringStatusFilter, metricSort, emptySampleFailedOnly, loading]);
 
   useEffect(() => {
     if (!saveSuccess) return;
@@ -489,7 +514,7 @@ export const TaskDetailPage: React.FC = () => {
       fetchResults({ silent: true });
     }, SMART_SCORE_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [task?.status, scoring, id, page, pageSize, resultStatusFilter, scoringStatusFilter, metricSort]);
+  }, [task?.status, scoring, id, page, pageSize, resultStatusFilter, scoringStatusFilter, metricSort, emptySampleFailedOnly]);
 
   useEffect(() => {
     if (!editing || !datasetScene) {
@@ -1098,6 +1123,15 @@ export const TaskDetailPage: React.FC = () => {
                         METRIC_SORT_OPTIONS[1],
                         METRIC_SORT_OPTIONS[2],
                       ]}
+                      highlighted={metricSort.startsWith('recall:') || emptySampleFailedOnly}
+                      extraToggle={{
+                        label: '空样本未通过',
+                        checked: emptySampleFailedOnly,
+                        onToggle: () => {
+                          setPage(1);
+                          setEmptySampleFailedOnly((prev) => !prev);
+                        },
+                      }}
                       value={metricSort.startsWith('recall:') ? metricSort : ''}
                       onChange={(next) => {
                         setPage(1);
@@ -1116,6 +1150,7 @@ export const TaskDetailPage: React.FC = () => {
                         METRIC_SORT_OPTIONS[3],
                         METRIC_SORT_OPTIONS[4],
                       ]}
+                      highlighted={metricSort.startsWith('precision:')}
                       value={metricSort.startsWith('precision:') ? metricSort : ''}
                       onChange={(next) => {
                         setPage(1);
