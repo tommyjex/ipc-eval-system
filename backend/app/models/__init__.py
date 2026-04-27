@@ -1,6 +1,6 @@
 from .base import Base
 from .dataset import Dataset, EvaluationData, Annotation
-from .task import EvaluationTask, TaskResult
+from .task import EvaluationTask, TaskResult, TaskPromptOptimization
 from .scoring_template import ScoringCriteriaTemplate
 from .prompt_template import TaskPromptTemplate
 from .user import User
@@ -12,6 +12,7 @@ __all__ = [
     "Annotation",
     "EvaluationTask",
     "TaskResult",
+    "TaskPromptOptimization",
     "ScoringCriteriaTemplate",
     "TaskPromptTemplate",
     "User",

@@ -98,7 +98,58 @@ def _sync_evaluation_task_columns():
             connection.execute(text(statement))
 
 
+def _sync_task_prompt_optimization_columns():
+    inspector = inspect(engine)
+    if "task_prompt_optimizations" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("task_prompt_optimizations")}
+    indexes = {index["name"]: index for index in inspector.get_indexes("task_prompt_optimizations")}
+    alter_statements: list[str] = []
+
+    if "version_number" not in existing_columns:
+        alter_statements.append(
+            "ALTER TABLE task_prompt_optimizations "
+            "ADD COLUMN version_number BIGINT NOT NULL DEFAULT 1 COMMENT '版本号'"
+        )
+
+    with engine.begin() as connection:
+        for statement in alter_statements:
+            connection.execute(text(statement))
+
+        if "version_number" in existing_columns or alter_statements:
+            connection.execute(
+                text(
+                    "UPDATE task_prompt_optimizations "
+                    "SET version_number = 1 "
+                    "WHERE version_number IS NULL OR version_number = 0"
+                )
+            )
+
+        task_id_index = indexes.get("idx_task_prompt_optimizations_task_id")
+        aux_index_name = "idx_task_prompt_optimizations_task_id_aux"
+        if task_id_index and task_id_index.get("unique"):
+            if aux_index_name not in indexes:
+                connection.execute(
+                    text(f"CREATE INDEX {aux_index_name} ON task_prompt_optimizations (task_id)")
+                )
+            connection.execute(text("DROP INDEX idx_task_prompt_optimizations_task_id ON task_prompt_optimizations"))
+
+        refreshed_indexes = {index["name"]: index for index in inspect(engine).get_indexes("task_prompt_optimizations")}
+        if "idx_task_prompt_optimizations_task_id" not in refreshed_indexes and aux_index_name not in refreshed_indexes:
+            connection.execute(text("CREATE INDEX idx_task_prompt_optimizations_task_id ON task_prompt_optimizations (task_id)"))
+
+        if "idx_task_prompt_optimizations_task_version" not in refreshed_indexes:
+            connection.execute(
+                text(
+                    "CREATE UNIQUE INDEX idx_task_prompt_optimizations_task_version "
+                    "ON task_prompt_optimizations (task_id, version_number)"
+                )
+            )
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     _sync_evaluation_task_columns()
     _sync_task_result_metric_columns()
+    _sync_task_prompt_optimization_columns()

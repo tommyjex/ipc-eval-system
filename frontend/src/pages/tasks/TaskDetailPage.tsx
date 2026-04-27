@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { taskApi, datasetApi, promptTemplateApi, buildEvaluationDataPreviewUrl } from '../../api';
-import type { EvaluationTask, TaskResultDetail, TaskStatus, TaskScoringStatus, TaskResultStatus, DatasetScene, PromptTemplate } from '../../api';
+import type { EvaluationTask, TaskResultDetail, TaskStatus, TaskScoringStatus, TaskResultStatus, DatasetScene, PromptTemplate, PromptOptimizationResponse, PromptOptimizationVersionItem } from '../../api';
 
 const getRecentPromptTemplateStorageKey = (scene: DatasetScene) => `recent-prompt-template:${scene}`;
 const normalizeFps = (value: number) => Math.max(0.01, Math.min(30, Number(value.toFixed(2))));
@@ -33,6 +33,29 @@ const METRIC_SORT_OPTIONS: MultiSelectOption<MetricSortValue>[] = [
 ];
 const formatNullableNumber = (value: number | null | undefined, digits = 1, suffix = '') =>
   (typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(digits)}${suffix}` : '-');
+const formatVersionLabel = (version: PromptOptimizationVersionItem) =>
+  `V${version.version_number} · ${new Date(version.created_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}`;
+
+const getMetricTrend = (
+  baseline: number | null | undefined,
+  current: number | null | undefined,
+  betterDirection: 'higher' | 'lower' = 'higher',
+) => {
+  if (typeof baseline !== 'number' || typeof current !== 'number') {
+    return { delta: null as number | null, label: '暂无对比', className: 'text-gray-500', arrow: '·' };
+  }
+  const delta = Number((current - baseline).toFixed(1));
+  if (delta === 0) {
+    return { delta, label: '持平', className: 'text-gray-500', arrow: '→' };
+  }
+  const improved = betterDirection === 'higher' ? delta > 0 : delta < 0;
+  return {
+    delta,
+    label: improved ? '提升' : '下降',
+    className: improved ? 'text-green-600' : 'text-red-600',
+    arrow: improved ? '↑' : '↓',
+  };
+};
 const normalizeResultDetail = (result: Partial<TaskResultDetail>): TaskResultDetail => ({
   id: result.id ?? 0,
   task_id: result.task_id ?? 0,
@@ -290,6 +313,18 @@ export const TaskDetailPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [scoring, setScoring] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState('');
+  const [promptOptimizationError, setPromptOptimizationError] = useState('');
+  const [promptOptimizationLoading, setPromptOptimizationLoading] = useState(false);
+  const [promptOptimizationSaving, setPromptOptimizationSaving] = useState(false);
+  const [promptOptimizationCompareLoading, setPromptOptimizationCompareLoading] = useState(false);
+  const [promptOptimizationApplyLoading, setPromptOptimizationApplyLoading] = useState(false);
+  const [promptOptimizationResult, setPromptOptimizationResult] = useState<PromptOptimizationResponse | null>(null);
+  const [promptOptimizationVersions, setPromptOptimizationVersions] = useState<PromptOptimizationVersionItem[]>([]);
+  const [selectedPromptOptimizationId, setSelectedPromptOptimizationId] = useState<number | null>(null);
+  const [promptOptimizationDraft, setPromptOptimizationDraft] = useState('');
+  const [promptOptimizationNotice, setPromptOptimizationNotice] = useState('');
+  const [promptOptimizationNoticeTaskId, setPromptOptimizationNoticeTaskId] = useState<number | null>(null);
+  const [promptOptimizationStage, setPromptOptimizationStage] = useState<1 | 2>(1);
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [editForm, setEditForm] = useState({
     name: '',
@@ -318,6 +353,18 @@ export const TaskDetailPage: React.FC = () => {
   const pollingRef = useRef(false);
 
   const delay = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+  useEffect(() => {
+    if (!promptOptimizationLoading) {
+      setPromptOptimizationStage(1);
+      return;
+    }
+    setPromptOptimizationStage(1);
+    const timer = window.setTimeout(() => {
+      setPromptOptimizationStage(2);
+    }, 8000);
+    return () => window.clearTimeout(timer);
+  }, [promptOptimizationLoading]);
 
   const fetchTaskInfo = async (options?: { silent?: boolean }) => {
     if (!id) return;
@@ -368,6 +415,78 @@ export const TaskDetailPage: React.FC = () => {
       }
     }
   };
+
+  const fetchPromptOptimization = async (taskId: number, options?: { silent?: boolean }) => {
+    try {
+      const result = await taskApi.getPromptOptimization(taskId, {
+        optimization_id: options?.silent ? selectedPromptOptimizationId ?? undefined : selectedPromptOptimizationId ?? undefined,
+      });
+      setPromptOptimizationResult(result);
+      setSelectedPromptOptimizationId(result.optimization_id);
+      setPromptOptimizationDraft(result.edited_prompt || result.optimized_prompt || '');
+      if (!options?.silent) {
+        setPromptOptimizationError('');
+      }
+      return result;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '获取提示词优化结果失败';
+      if (message.includes('暂无提示词优化结果')) {
+        setPromptOptimizationResult(null);
+        setPromptOptimizationDraft('');
+        if (!options?.silent) {
+          setPromptOptimizationError('');
+        }
+        return null;
+      }
+      if (!options?.silent) {
+        setPromptOptimizationError(message);
+      }
+      return null;
+    }
+  };
+
+  const fetchPromptOptimizationVersions = async (taskId: number) => {
+    try {
+      const result = await taskApi.listPromptOptimizations(taskId);
+      setPromptOptimizationVersions(result.items);
+      return result.items;
+    } catch (err) {
+      return [];
+    }
+  };
+
+  const renderComparisonMetric = (
+    label: string,
+    baselineValue: number | null | undefined,
+    currentValue: number | null | undefined,
+    betterDirection: 'higher' | 'lower' = 'higher',
+    suffix = '%',
+  ) => {
+    const trend = getMetricTrend(baselineValue, currentValue, betterDirection);
+    return (
+      <div className="rounded border border-gray-100 bg-gray-50 p-2">
+        <div className="text-xs text-gray-500">{label}</div>
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <div className="text-sm font-medium text-gray-800">{formatNullableNumber(currentValue, 1, suffix)}</div>
+          <div className={`shrink-0 text-xs font-medium ${trend.className}`}>
+            {trend.arrow} {trend.label}
+            {trend.delta !== null ? ` ${Math.abs(trend.delta).toFixed(1)}${suffix}` : ''}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderStaticMetricCard = (
+    label: string,
+    value: number | null | undefined,
+    suffix = '%',
+  ) => (
+    <div className="rounded border border-gray-100 bg-gray-50 p-2">
+      <div className="text-xs text-gray-500">{label}</div>
+      <div className="mt-1 text-sm font-medium text-gray-800">{formatNullableNumber(value, 1, suffix)}</div>
+    </div>
+  );
 
   const fetchResults = async (options?: { silent?: boolean }) => {
     if (!id) return;
@@ -497,6 +616,42 @@ export const TaskDetailPage: React.FC = () => {
   }, [id]);
 
   useEffect(() => {
+    setPromptOptimizationResult(null);
+    setPromptOptimizationError('');
+    setPromptOptimizationDraft('');
+    setPromptOptimizationNotice('');
+    setPromptOptimizationNoticeTaskId(null);
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+    const taskId = parseInt(id, 10);
+    void (async () => {
+      const versions = await fetchPromptOptimizationVersions(taskId);
+      if (versions.length > 0) {
+        setSelectedPromptOptimizationId((prev) => prev ?? versions[0].optimization_id);
+      } else {
+        setSelectedPromptOptimizationId(null);
+      }
+    })();
+  }, [id]);
+
+  useEffect(() => {
+    if (!id || selectedPromptOptimizationId == null) return;
+    void fetchPromptOptimization(parseInt(id, 10), { silent: true });
+  }, [id, selectedPromptOptimizationId]);
+
+  useEffect(() => {
+    if (!id || !promptOptimizationResult?.comparison) return;
+    const compareStatus = promptOptimizationResult.comparison.compare_task.status;
+    if (compareStatus !== 'pending' && compareStatus !== 'running') return;
+    const timer = window.setInterval(() => {
+      void fetchPromptOptimization(parseInt(id, 10), { silent: true });
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [id, promptOptimizationResult?.compare_task_id, promptOptimizationResult?.comparison?.compare_task.status]);
+
+  useEffect(() => {
     if (!id || loading) return;
     fetchResults();
   }, [id, page, pageSize, resultStatusFilter, scoringStatusFilter, metricSort, emptySampleFailedOnly, loading]);
@@ -508,7 +663,7 @@ export const TaskDetailPage: React.FC = () => {
   }, [saveSuccess]);
 
   useEffect(() => {
-    if (task?.status !== 'running' && !scoring) return;
+    if (task?.status !== 'pending' && task?.status !== 'running' && !scoring) return;
     const timer = window.setInterval(() => {
       fetchTaskInfo({ silent: true });
       fetchResults({ silent: true });
@@ -782,6 +937,110 @@ export const TaskDetailPage: React.FC = () => {
   const shouldCollapsePrompt =
     !!task?.prompt && (task.prompt.length > 200 || task.prompt.includes('\n'));
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const canOptimizePrompt = task?.status === 'completed' && !editing && !scoring;
+
+  const handleOptimizePrompt = async () => {
+    if (!id) return;
+    try {
+      setPromptOptimizationLoading(true);
+      setPromptOptimizationError('');
+      setPromptOptimizationNotice('');
+      setPromptOptimizationNoticeTaskId(null);
+      setPromptOptimizationResult(null);
+      const result = await taskApi.optimizePrompt(parseInt(id, 10));
+      const versions = await fetchPromptOptimizationVersions(parseInt(id, 10));
+      setSelectedPromptOptimizationId(result.optimization_id);
+      setPromptOptimizationVersions(versions);
+      setPromptOptimizationResult(result);
+      setPromptOptimizationDraft(result.edited_prompt || result.optimized_prompt || '');
+    } catch (err) {
+      setPromptOptimizationError(err instanceof Error ? err.message : '提示词优化失败');
+    } finally {
+      setPromptOptimizationLoading(false);
+    }
+  };
+
+  const savePromptOptimizationDraft = async () => {
+    if (!id || !promptOptimizationResult) return null;
+    try {
+      setPromptOptimizationSaving(true);
+      setPromptOptimizationError('');
+      setPromptOptimizationNotice('');
+      setPromptOptimizationNoticeTaskId(null);
+      const result = await taskApi.updatePromptOptimization(parseInt(id, 10), {
+        edited_prompt: promptOptimizationDraft.trim(),
+      }, { optimization_id: selectedPromptOptimizationId ?? undefined });
+      setPromptOptimizationResult(result);
+      setPromptOptimizationDraft(result.edited_prompt || result.optimized_prompt || '');
+      setPromptOptimizationNotice('已保存人工微调后的提示词');
+      return result;
+    } catch (err) {
+      setPromptOptimizationError(err instanceof Error ? err.message : '保存优化后提示词失败');
+      return null;
+    } finally {
+      setPromptOptimizationSaving(false);
+    }
+  };
+
+  const ensurePromptOptimizationDraftSaved = async () => {
+    if (!promptOptimizationResult) return null;
+    const current = promptOptimizationDraft.trim();
+    if (!current) {
+      setPromptOptimizationError('优化后提示词不能为空');
+      return null;
+    }
+    if (current === promptOptimizationResult.edited_prompt.trim()) {
+      return promptOptimizationResult;
+    }
+    return savePromptOptimizationDraft();
+  };
+
+  const handleCreatePromptOptimizationCompareTask = async () => {
+    if (!id || !promptOptimizationResult) return;
+    const saved = await ensurePromptOptimizationDraftSaved();
+    if (!saved) return;
+    try {
+      setPromptOptimizationCompareLoading(true);
+      setPromptOptimizationError('');
+      setPromptOptimizationNotice('');
+      setPromptOptimizationNoticeTaskId(null);
+      const result = await taskApi.createPromptOptimizationCompareTask(parseInt(id, 10), {
+        optimization_id: selectedPromptOptimizationId ?? undefined,
+      });
+      await fetchPromptOptimizationVersions(parseInt(id, 10));
+      setPromptOptimizationResult(result.optimization);
+      setSelectedPromptOptimizationId(result.optimization.optimization_id);
+      setPromptOptimizationDraft(result.optimization.edited_prompt || result.optimization.optimized_prompt || '');
+      setPromptOptimizationNotice(`已创建对比任务：${result.compare_task.name}`);
+      setPromptOptimizationNoticeTaskId(result.compare_task.id);
+    } catch (err) {
+      setPromptOptimizationError(err instanceof Error ? err.message : '创建对比任务失败');
+    } finally {
+      setPromptOptimizationCompareLoading(false);
+    }
+  };
+
+  const handleApplyPromptOptimization = async () => {
+    if (!id || !promptOptimizationResult) return;
+    const saved = await ensurePromptOptimizationDraftSaved();
+    if (!saved) return;
+    try {
+      setPromptOptimizationApplyLoading(true);
+      setPromptOptimizationError('');
+      setPromptOptimizationNotice('');
+      setPromptOptimizationNoticeTaskId(null);
+      const updatedTask = await taskApi.applyPromptOptimization(parseInt(id, 10), {
+        optimization_id: selectedPromptOptimizationId ?? undefined,
+      });
+      setTask(updatedTask);
+      setEditForm((prev) => ({ ...prev, prompt: updatedTask.prompt || '' }));
+      setPromptOptimizationNotice('已将优化后提示词替换为当前任务 Prompt');
+    } catch (err) {
+      setPromptOptimizationError(err instanceof Error ? err.message : '替换任务 Prompt 失败');
+    } finally {
+      setPromptOptimizationApplyLoading(false);
+    }
+  };
 
   if (loading) {
     return <div className="p-6 text-center">加载中...</div>;
@@ -878,6 +1137,16 @@ export const TaskDetailPage: React.FC = () => {
               </div>
             </div>
             <div className="flex space-x-2 shrink-0">
+              {!editing && (
+                <button
+                  onClick={handleOptimizePrompt}
+                  disabled={!canOptimizePrompt || promptOptimizationLoading}
+                  className="px-4 py-2 rounded border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+                  title={canOptimizePrompt ? '基于当前任务全量已评分样本生成提示词优化建议' : '请先完成智能评分后再执行提示词优化'}
+                >
+                  {promptOptimizationLoading ? '优化中...' : '提示词优化'}
+                </button>
+              )}
               {editing ? (
                 <>
                   <button
@@ -956,6 +1225,294 @@ export const TaskDetailPage: React.FC = () => {
                   {promptExpanded ? '收起' : '展开'}
                 </button>
               )}
+            </div>
+          )}
+
+          {!editing && promptOptimizationError && (
+            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-medium text-red-800">提示词优化失败</h3>
+                  <p className="mt-1 text-sm text-red-700">{promptOptimizationError}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleOptimizePrompt}
+                  disabled={promptOptimizationLoading || !canOptimizePrompt}
+                  className="shrink-0 rounded border border-red-300 bg-white px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                >
+                  重试
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!editing && promptOptimizationNotice && (
+            <div className="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+              <div className="flex items-center justify-between gap-4">
+                <div className="text-sm text-green-700">{promptOptimizationNotice}</div>
+                {promptOptimizationNoticeTaskId && (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/tasks/${promptOptimizationNoticeTaskId}`)}
+                    className="shrink-0 text-sm font-medium text-green-700 hover:text-green-900 hover:underline"
+                  >
+                    打开新任务
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {!editing && promptOptimizationLoading && (
+            <div className="mt-4 rounded-lg border border-violet-200 bg-violet-50 px-4 py-4">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 h-4 w-4 animate-spin rounded-full border-2 border-violet-300 border-t-violet-700" />
+                <div>
+                  <h3 className="text-sm font-medium text-violet-800">正在生成提示词优化建议</h3>
+                  <p className="mt-1 text-sm text-violet-700">
+                    当前会按“两阶段优化链路”依次完成问题分析、优化策略归纳和优化后提示词生成。
+                  </p>
+                  <div className="mt-3 space-y-0">
+                    <div className="flex items-start gap-3">
+                      <div className="flex flex-col items-center">
+                        <div
+                          className={`flex h-6 w-6 items-center justify-center rounded-full border text-xs font-medium ${
+                            promptOptimizationStage === 1
+                              ? 'border-violet-600 bg-violet-600 text-white'
+                              : 'border-green-600 bg-green-600 text-white'
+                          }`}
+                        >
+                          {promptOptimizationStage === 1 ? '1' : '✓'}
+                        </div>
+                        <div className="mt-1 h-8 w-px bg-violet-200" />
+                      </div>
+                      <div className="pb-3">
+                        <div className={`text-sm font-medium ${promptOptimizationStage >= 1 ? 'text-violet-900' : 'text-gray-500'}`}>
+                          阶段 1 / 2
+                        </div>
+                        <div className={`text-sm ${promptOptimizationStage === 1 ? 'text-violet-700' : 'text-gray-600'}`}>
+                          分析问题并归纳优化策略
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="flex flex-col items-center">
+                        <div
+                          className={`flex h-6 w-6 items-center justify-center rounded-full border text-xs font-medium ${
+                            promptOptimizationStage === 2
+                              ? 'border-violet-600 bg-violet-600 text-white'
+                              : 'border-violet-300 bg-white text-violet-400'
+                          }`}
+                        >
+                          {promptOptimizationStage === 2 ? '2' : '○'}
+                        </div>
+                      </div>
+                      <div>
+                        <div className={`text-sm font-medium ${promptOptimizationStage === 2 ? 'text-violet-900' : 'text-gray-500'}`}>
+                          阶段 2 / 2
+                        </div>
+                        <div className={`text-sm ${promptOptimizationStage === 2 ? 'text-violet-700' : 'text-gray-600'}`}>
+                          生成优化后提示词
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="mt-1 text-xs text-violet-600">
+                    大任务会基于全量已评分样本进行分析，耗时可能明显增加，请耐心等待。
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!editing && !promptOptimizationLoading && !promptOptimizationError && !promptOptimizationResult && (
+            <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-5">
+              <h3 className="text-sm font-medium text-gray-800">提示词优化</h3>
+              <p className="mt-1 text-sm text-gray-600">
+                基于当前任务的全量已评分样本，重点分析标注结果与模型输出的 diff，输出问题摘要、优化策略和一版优化后提示词。
+              </p>
+              <p className="mt-2 text-xs text-gray-500">
+                仅对已完成智能评分的任务开放；点击右上角“提示词优化”即可开始生成。
+              </p>
+            </div>
+          )}
+
+          {!editing && promptOptimizationResult && (
+            <div className="mt-4 pt-4 border-t">
+              <div className="mb-3 flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-medium text-gray-700">提示词优化结果</h3>
+                  <p className="mt-1 text-xs text-gray-500">
+                    版本 V{promptOptimizationResult.version_number} · 基于 {promptOptimizationResult.sample_count} 条已评分样本，模型 {promptOptimizationResult.optimization_model}
+                  </p>
+                </div>
+                <div />
+              </div>
+              <div className="space-y-4">
+                {promptOptimizationVersions.length > 0 && (
+                  <div className="rounded bg-white p-4 border">
+                    <div className="mb-2 text-sm font-medium text-gray-800">历史版本</div>
+                    <div className="flex flex-wrap gap-2">
+                      {promptOptimizationVersions.map((version) => {
+                        const selected = version.optimization_id === selectedPromptOptimizationId;
+                        return (
+                          <button
+                            key={version.optimization_id}
+                            type="button"
+                            onClick={() => {
+                              setPromptOptimizationNotice('');
+                              setPromptOptimizationError('');
+                              setSelectedPromptOptimizationId(version.optimization_id);
+                            }}
+                            className={`rounded border px-3 py-1.5 text-sm ${
+                              selected
+                                ? 'border-violet-600 bg-violet-50 text-violet-700'
+                                : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100'
+                            }`}
+                          >
+                            {formatVersionLabel(version)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                <div className="rounded bg-violet-50 p-4">
+                  <div className="mb-2 text-sm font-medium text-violet-800">问题摘要</div>
+                  <p className="whitespace-pre-wrap text-sm text-violet-900">{promptOptimizationResult.analysis_summary}</p>
+                </div>
+                <div className="rounded bg-gray-50 p-4">
+                  <div className="mb-2 text-sm font-medium text-gray-800">问题点</div>
+                  {promptOptimizationResult.issues.length > 0 ? (
+                    <div className="space-y-3">
+                      {promptOptimizationResult.issues.map((issue, index) => (
+                        <div key={`${issue.title}-${index}`} className="rounded border bg-white p-3">
+                          <div className="text-sm font-medium text-gray-900">{issue.title}</div>
+                          <div className="mt-1 whitespace-pre-wrap text-sm text-gray-700">{issue.summary}</div>
+                          {issue.evidence.length > 0 && (
+                            <div className="mt-2 text-xs text-gray-500">
+                              证据样本：{issue.evidence.join('；')}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-500">模型未返回结构化问题点列表。</div>
+                  )}
+                </div>
+                <div className="rounded bg-green-50 p-4">
+                  <div className="mb-2 text-sm font-medium text-green-800">优化策略</div>
+                  {promptOptimizationResult.optimization_strategies.length > 0 ? (
+                    <ul className="space-y-1 text-sm text-green-900">
+                      {promptOptimizationResult.optimization_strategies.map((strategy, index) => (
+                        <li key={`${strategy}-${index}`}>• {strategy}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="text-sm text-green-900">模型未返回结构化优化策略列表。</div>
+                  )}
+                </div>
+                <div className="rounded bg-blue-50 p-4">
+                  <div className="mb-2 text-sm font-medium text-blue-800">优化后提示词</div>
+                  <div className="flex flex-col gap-4 lg:flex-row">
+                    <div className="flex-1">
+                      <textarea
+                        value={promptOptimizationDraft}
+                        onChange={(event) => setPromptOptimizationDraft(event.target.value)}
+                        rows={12}
+                        className="w-full rounded border border-blue-100 bg-white p-3 text-sm text-gray-800"
+                        placeholder="可在此基础上继续人工微调优化后的提示词"
+                      />
+                      <p className="mt-2 text-xs text-blue-700">
+                        你可以继续人工微调，然后选择保存、创建对比任务，或直接替换为当前任务 Prompt。
+                      </p>
+                    </div>
+                    <div className="flex w-full shrink-0 flex-col gap-2 lg:w-56">
+                      <button
+                        type="button"
+                        onClick={savePromptOptimizationDraft}
+                        disabled={promptOptimizationSaving || promptOptimizationCompareLoading || promptOptimizationApplyLoading || !promptOptimizationDraft.trim()}
+                        className="rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                      >
+                        {promptOptimizationSaving ? '保存中...' : '保存微调'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCreatePromptOptimizationCompareTask}
+                        disabled={promptOptimizationSaving || promptOptimizationCompareLoading || promptOptimizationApplyLoading || !promptOptimizationDraft.trim()}
+                        className="rounded bg-violet-600 px-3 py-2 text-sm text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                      >
+                        {promptOptimizationCompareLoading ? '创建中...' : '新建对比任务并运行评分'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleApplyPromptOptimization}
+                        disabled={promptOptimizationSaving || promptOptimizationCompareLoading || promptOptimizationApplyLoading || !promptOptimizationDraft.trim()}
+                        className="rounded border border-blue-200 bg-blue-100 px-3 py-2 text-sm text-blue-700 hover:bg-blue-200 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+                      >
+                        {promptOptimizationApplyLoading ? '替换中...' : '替换为任务 Prompt'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard.writeText(promptOptimizationDraft || promptOptimizationResult.edited_prompt || promptOptimizationResult.optimized_prompt)}
+                        className="rounded border border-transparent px-3 py-2 text-sm text-blue-600 hover:bg-white hover:text-blue-800"
+                      >
+                        复制当前提示词
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {promptOptimizationResult.revision_summary.length > 0 && (
+                  <div className="rounded bg-amber-50 p-4">
+                    <div className="mb-2 text-sm font-medium text-amber-800">修改说明</div>
+                    <ul className="space-y-1 text-sm text-amber-900">
+                      {promptOptimizationResult.revision_summary.map((item, index) => (
+                        <li key={`${item}-${index}`}>• {item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {promptOptimizationResult.comparison && (
+                  <div className="rounded bg-slate-50 p-4">
+                    <div className="mb-3 flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium text-slate-800">优化前后效果对比</div>
+                      <div className="text-xs text-slate-500">
+                        对比任务状态：{getStatusBadge(promptOptimizationResult.comparison.compare_task.status)}
+                      </div>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="rounded border bg-white p-4">
+                        <div className="mb-2 text-sm font-medium text-gray-900">优化前</div>
+                        <div className="text-xs text-gray-500">{promptOptimizationResult.comparison.baseline_task.task_name}</div>
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-gray-700">
+                          {renderStaticMetricCard('Micro 召回率', promptOptimizationResult.comparison.baseline_task.micro_recall)}
+                          {renderStaticMetricCard('Micro 精确率', promptOptimizationResult.comparison.baseline_task.micro_precision)}
+                          {renderStaticMetricCard('Macro 召回率', promptOptimizationResult.comparison.baseline_task.macro_recall)}
+                          {renderStaticMetricCard('Macro 精确率', promptOptimizationResult.comparison.baseline_task.macro_precision)}
+                          {renderStaticMetricCard('覆盖率', promptOptimizationResult.comparison.baseline_task.coverage_rate)}
+                          {renderStaticMetricCard('空样本通过率', promptOptimizationResult.comparison.baseline_task.empty_sample_pass_rate)}
+                          {renderStaticMetricCard('不可评分数', promptOptimizationResult.comparison.baseline_task.unscorable_count, '')}
+                        </div>
+                      </div>
+                      <div className="rounded border bg-white p-4">
+                        <div className="mb-2 text-sm font-medium text-gray-900">优化后</div>
+                        <div className="text-xs text-gray-500">{promptOptimizationResult.comparison.compare_task.task_name}</div>
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-gray-700">
+                          {renderComparisonMetric('Micro 召回率', promptOptimizationResult.comparison.baseline_task.micro_recall, promptOptimizationResult.comparison.compare_task.micro_recall)}
+                          {renderComparisonMetric('Micro 精确率', promptOptimizationResult.comparison.baseline_task.micro_precision, promptOptimizationResult.comparison.compare_task.micro_precision)}
+                          {renderComparisonMetric('Macro 召回率', promptOptimizationResult.comparison.baseline_task.macro_recall, promptOptimizationResult.comparison.compare_task.macro_recall)}
+                          {renderComparisonMetric('Macro 精确率', promptOptimizationResult.comparison.baseline_task.macro_precision, promptOptimizationResult.comparison.compare_task.macro_precision)}
+                          {renderComparisonMetric('覆盖率', promptOptimizationResult.comparison.baseline_task.coverage_rate, promptOptimizationResult.comparison.compare_task.coverage_rate)}
+                          {renderComparisonMetric('空样本通过率', promptOptimizationResult.comparison.baseline_task.empty_sample_pass_rate, promptOptimizationResult.comparison.compare_task.empty_sample_pass_rate)}
+                          {renderComparisonMetric('不可评分数', promptOptimizationResult.comparison.baseline_task.unscorable_count, promptOptimizationResult.comparison.compare_task.unscorable_count, 'lower', '')}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

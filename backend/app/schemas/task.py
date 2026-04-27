@@ -64,6 +64,71 @@ class EvaluationTaskScoreRequest(BaseModel):
     result_ids: Optional[list[int]] = Field(None, description="指定评分的结果ID列表")
 
 
+class PromptOptimizationIssue(BaseModel):
+    title: str = Field(..., description="问题标题")
+    summary: str = Field(..., description="问题摘要")
+    evidence: list[str] = Field(default_factory=list, description="样本证据")
+
+
+class PromptOptimizationTaskMetrics(BaseModel):
+    task_id: int = Field(..., description="任务ID")
+    task_name: str = Field(..., description="任务名称")
+    status: TaskStatus = Field(..., description="任务状态")
+    micro_recall: Optional[float] = Field(None, description="Micro 召回率")
+    micro_precision: Optional[float] = Field(None, description="Micro 精确率")
+    macro_recall: Optional[float] = Field(None, description="Macro 召回率")
+    macro_precision: Optional[float] = Field(None, description="Macro 精确率")
+    coverage_rate: Optional[float] = Field(None, description="覆盖率")
+    empty_sample_pass_rate: Optional[float] = Field(None, description="空样本通过率")
+    unscorable_count: int = Field(0, description="不可评分数量")
+
+
+class PromptOptimizationComparisonResponse(BaseModel):
+    baseline_task: PromptOptimizationTaskMetrics = Field(..., description="基线任务指标")
+    compare_task: PromptOptimizationTaskMetrics = Field(..., description="对比任务指标")
+
+
+class PromptOptimizationResponse(BaseModel):
+    optimization_id: int = Field(..., description="提示词优化记录ID")
+    version_number: int = Field(..., description="优化版本号")
+    task_id: int = Field(..., description="任务ID")
+    sample_count: int = Field(..., description="纳入分析的样本数")
+    source_prompt: Optional[str] = Field(None, description="原始提示词")
+    optimization_model: str = Field(..., description="优化模型")
+    analysis_summary: str = Field(..., description="问题分析摘要")
+    issues: list[PromptOptimizationIssue] = Field(default_factory=list, description="问题点列表")
+    optimization_strategies: list[str] = Field(default_factory=list, description="优化策略")
+    optimized_prompt: str = Field(..., description="优化后提示词")
+    edited_prompt: str = Field(..., description="人工微调后的提示词")
+    revision_summary: list[str] = Field(default_factory=list, description="提示词修改摘要")
+    compare_task_id: Optional[int] = Field(None, description="对比任务ID")
+    comparison: Optional[PromptOptimizationComparisonResponse] = Field(None, description="优化前后任务级指标对比")
+    analysis_input_tokens: Optional[int] = Field(None, description="第一阶段输入 tokens")
+    analysis_output_tokens: Optional[int] = Field(None, description="第一阶段输出 tokens")
+    prompt_input_tokens: Optional[int] = Field(None, description="第二阶段输入 tokens")
+    prompt_output_tokens: Optional[int] = Field(None, description="第二阶段输出 tokens")
+    created_at: datetime = Field(..., description="创建时间")
+    updated_at: Optional[datetime] = Field(None, description="更新时间")
+
+
+class PromptOptimizationVersionItem(BaseModel):
+    optimization_id: int = Field(..., description="提示词优化记录ID")
+    version_number: int = Field(..., description="优化版本号")
+    sample_count: int = Field(..., description="纳入分析的样本数")
+    compare_task_id: Optional[int] = Field(None, description="对比任务ID")
+    created_at: datetime = Field(..., description="创建时间")
+    updated_at: Optional[datetime] = Field(None, description="更新时间")
+
+
+class PromptOptimizationVersionListResponse(BaseModel):
+    items: list[PromptOptimizationVersionItem]
+    total: int
+
+
+class PromptOptimizationUpdateRequest(BaseModel):
+    edited_prompt: str = Field(..., min_length=1, description="人工微调后的提示词")
+
+
 class EvaluationTaskResponse(EvaluationTaskBase):
     id: int
     dataset_id: int
@@ -89,6 +154,11 @@ class EvaluationTaskResponse(EvaluationTaskBase):
 class EvaluationTaskListResponse(BaseModel):
     items: list[EvaluationTaskResponse]
     total: int
+
+
+class PromptOptimizationCompareResponse(BaseModel):
+    optimization: PromptOptimizationResponse = Field(..., description="最新优化记录")
+    compare_task: EvaluationTaskResponse = Field(..., description="新建的对比任务")
 
 
 class TaskResultBase(BaseModel):

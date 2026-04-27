@@ -21,6 +21,10 @@ from app.schemas.task import (
     EvaluationTaskScoreRequest,
     EvaluationTaskResponse,
     EvaluationTaskListResponse,
+    PromptOptimizationCompareResponse,
+    PromptOptimizationResponse,
+    PromptOptimizationUpdateRequest,
+    PromptOptimizationVersionListResponse,
     TaskResultListResponse,
     TaskResultDetailResponse,
     TaskResultDetailListResponse,
@@ -31,6 +35,14 @@ from app.schemas.task import (
 )
 from app.utils import get_tos_client
 from app.services import get_ark_client, get_dashscope_client
+from app.services.prompt_optimization import (
+    build_prompt_optimization_response,
+    build_prompt_optimization_version_list,
+    get_prompt_optimization_record,
+    list_prompt_optimization_records,
+    optimize_task_prompt,
+    update_prompt_optimization_prompt,
+)
 from app.services.scoring_metrics import METRIC_VERSION, compute_score_metrics
 from app.services.video_frames import DEFAULT_VIDEO_FPS
 
@@ -867,6 +879,170 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
     return task
 
 
+@router.post("/{task_id}/prompt-optimization", response_model=PromptOptimizationResponse, summary="生成提示词优化建议")
+def generate_task_prompt_optimization(task_id: int, db: Session = Depends(get_db)):
+    task = db.query(EvaluationTask).filter(EvaluationTask.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="评测任务不存在")
+
+    dataset = db.query(Dataset).filter(Dataset.id == task.dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="评测集不存在")
+
+    blocking_count = db.query(TaskResult).filter(
+        TaskResult.task_id == task_id,
+        TaskResult.scoring_status.in_([
+            TaskScoringStatus.not_scored.value,
+            TaskScoringStatus.scoring.value,
+        ]),
+    ).count()
+    if blocking_count > 0:
+        raise HTTPException(status_code=400, detail="当前任务尚未完成智能评分，请先完成评分后再执行提示词优化")
+
+    rows = (
+        db.query(TaskResult, EvaluationData, Annotation)
+        .join(EvaluationData, TaskResult.data_id == EvaluationData.id)
+        .outerjoin(Annotation, EvaluationData.id == Annotation.data_id)
+        .filter(TaskResult.task_id == task_id, TaskResult.scoring_status == TaskScoringStatus.scored.value)
+        .order_by(EvaluationData.id.asc())
+        .all()
+    )
+    if not rows:
+        raise HTTPException(status_code=400, detail="当前任务没有可用于提示词优化的已评分样本")
+
+    try:
+        return optimize_task_prompt(db, task, dataset, rows)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("提示词优化失败: task_id=%s", task_id)
+        raise HTTPException(status_code=500, detail=f"提示词优化失败: {exc}") from exc
+
+
+@router.get("/{task_id}/prompt-optimization", response_model=PromptOptimizationResponse, summary="获取提示词优化结果")
+def get_task_prompt_optimization(
+    task_id: int,
+    optimization_id: Optional[int] = Query(None, description="指定优化版本ID"),
+    db: Session = Depends(get_db),
+):
+    task = db.query(EvaluationTask).filter(EvaluationTask.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="评测任务不存在")
+    optimization = get_prompt_optimization_record(db, task_id, optimization_id)
+    if not optimization:
+        raise HTTPException(status_code=404, detail="当前任务暂无提示词优化结果")
+    return build_prompt_optimization_response(db, task, optimization)
+
+
+@router.get("/{task_id}/prompt-optimizations", response_model=PromptOptimizationVersionListResponse, summary="获取提示词优化历史版本列表")
+def list_task_prompt_optimizations(task_id: int, db: Session = Depends(get_db)):
+    task = db.query(EvaluationTask).filter(EvaluationTask.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="评测任务不存在")
+    return build_prompt_optimization_version_list(list_prompt_optimization_records(db, task_id))
+
+
+@router.put("/{task_id}/prompt-optimization", response_model=PromptOptimizationResponse, summary="保存人工微调后的优化提示词")
+def update_task_prompt_optimization(
+    task_id: int,
+    payload: PromptOptimizationUpdateRequest,
+    optimization_id: Optional[int] = Query(None, description="指定优化版本ID"),
+    db: Session = Depends(get_db),
+):
+    task = db.query(EvaluationTask).filter(EvaluationTask.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="评测任务不存在")
+    optimization = get_prompt_optimization_record(db, task_id, optimization_id)
+    if not optimization:
+        raise HTTPException(status_code=404, detail="当前任务暂无提示词优化结果")
+    return update_prompt_optimization_prompt(db, task, optimization, payload.edited_prompt)
+
+
+@router.post("/{task_id}/prompt-optimization/compare", response_model=PromptOptimizationCompareResponse, summary="基于优化提示词创建对比任务")
+async def create_prompt_optimization_compare_task(
+    task_id: int,
+    optimization_id: Optional[int] = Query(None, description="指定优化版本ID"),
+    db: Session = Depends(get_db),
+    username: str = Depends(require_auth),
+):
+    task = db.query(EvaluationTask).filter(EvaluationTask.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="评测任务不存在")
+    optimization = get_prompt_optimization_record(db, task_id, optimization_id)
+    if not optimization:
+        raise HTTPException(status_code=404, detail="当前任务暂无提示词优化结果")
+
+    effective_prompt = (optimization.edited_prompt or optimization.optimized_prompt or "").strip()
+    if not effective_prompt:
+        raise HTTPException(status_code=400, detail="当前优化记录没有可用的提示词")
+
+    compare_task = EvaluationTask(
+        dataset_id=task.dataset_id,
+        username=username,
+        name=f"{task.name}-提示词优化对比-{datetime.now().strftime('%m%d-%H%M%S')}",
+        target_model=task.target_model,
+        model_provider=task.model_provider,
+        scoring_criteria=task.scoring_criteria,
+        prompt=effective_prompt,
+        fps=_normalize_fps(task.fps or DEFAULT_VIDEO_FPS),
+        status=TaskStatus.running.value,
+    )
+    db.add(compare_task)
+    db.commit()
+    db.refresh(compare_task)
+
+    optimization.compare_task_id = compare_task.id
+    db.commit()
+    db.refresh(optimization)
+
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _run_task_and_score_in_background, compare_task.id)
+
+    return PromptOptimizationCompareResponse(
+        optimization=build_prompt_optimization_response(db, task, optimization),
+        compare_task=compare_task,
+    )
+
+
+@router.post("/{task_id}/prompt-optimization/apply", response_model=EvaluationTaskResponse, summary="将优化提示词替换为当前任务 Prompt")
+def apply_prompt_optimization_to_task(
+    task_id: int,
+    optimization_id: Optional[int] = Query(None, description="指定优化版本ID"),
+    db: Session = Depends(get_db),
+):
+    task = db.query(EvaluationTask).filter(EvaluationTask.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="评测任务不存在")
+    optimization = get_prompt_optimization_record(db, task_id, optimization_id)
+    if not optimization:
+        raise HTTPException(status_code=404, detail="当前任务暂无提示词优化结果")
+
+    effective_prompt = (optimization.edited_prompt or optimization.optimized_prompt or "").strip()
+    if not effective_prompt:
+        raise HTTPException(status_code=400, detail="当前优化记录没有可用的提示词")
+
+    task.prompt = effective_prompt
+    db.commit()
+    db.refresh(task)
+
+    stats_row = _build_task_metric_stats_query(db).filter(TaskResult.task_id == task_id).first()
+    if stats_row:
+        _attach_task_metric_summary(
+            task,
+            sum_tp=stats_row.sum_tp,
+            sum_fp=stats_row.sum_fp,
+            sum_fn=stats_row.sum_fn,
+            macro_recall=stats_row.macro_recall,
+            macro_precision=stats_row.macro_precision,
+            scorable_count=stats_row.scorable_count,
+            empty_sample_count=stats_row.empty_sample_count,
+            empty_sample_passed_count=stats_row.empty_sample_passed_count,
+            unscorable_count=stats_row.unscorable_count,
+            total_count=stats_row.total_count,
+        )
+    return task
+
+
 @router.put("/{task_id}", response_model=EvaluationTaskResponse, summary="更新评测任务")
 def update_task(task_id: int, data: EvaluationTaskUpdate, db: Session = Depends(get_db)):
     task = db.query(EvaluationTask).filter(EvaluationTask.id == task_id).first()
@@ -1378,5 +1554,41 @@ def _run_evaluation_task(task_id: int, target_data_ids: Optional[list[int]] = No
             task.status = TaskStatus.failed.value
             task.completed_at = datetime.now()
         db.commit()
+    finally:
+        db.close()
+
+
+def _run_task_and_score_in_background(task_id: int):
+    _run_evaluation_task(task_id)
+    db = SessionLocal()
+    try:
+        task = db.query(EvaluationTask).filter(EvaluationTask.id == task_id).first()
+        if not task:
+            return
+        scoreable_result_ids = _get_scoreable_task_result_ids(db, task_id)
+        if not scoreable_result_ids:
+            return
+        _score_task_result_ids_concurrently(
+            task_id,
+            scoreable_result_ids,
+            task.scoring_criteria,
+            TASK_SCORING_BATCH_SIZE,
+        )
+        remaining_retry_ids = _get_scoreable_task_result_ids(
+            db,
+            task_id,
+            scoring_statuses=[
+                TaskScoringStatus.not_scored.value,
+                TaskScoringStatus.score_failed.value,
+            ],
+        )
+        if remaining_retry_ids:
+            retry_workers = max(1, min(16, len(remaining_retry_ids), TASK_SCORING_BATCH_SIZE))
+            _score_task_result_ids_concurrently(
+                task_id,
+                remaining_retry_ids,
+                task.scoring_criteria,
+                retry_workers,
+            )
     finally:
         db.close()

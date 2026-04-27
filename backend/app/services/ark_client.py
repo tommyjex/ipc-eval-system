@@ -13,14 +13,14 @@ from app.services.video_frames import DEFAULT_VIDEO_FPS, extract_video_frames
 
 
 class ArkClient:
-    def __init__(self):
+    def __init__(self, timeout: Optional[int] = None):
         settings = get_settings()
         self.base_url = settings.ark_base_url
         self.default_model = settings.ark_model
         self.client = Ark(
             api_key=settings.ark_api_key,
             base_url=self.base_url,
-            timeout=settings.ark_timeout,
+            timeout=timeout or settings.ark_timeout,
             max_retries=settings.ark_max_retries,
         )
 
@@ -173,6 +173,7 @@ class ArkClient:
         content: list[dict],
         model: Optional[str] = None,
         structured_output_json: bool = False,
+        thinking_enabled: bool = False,
     ) -> dict[str, Any]:
         request_kwargs: dict[str, Any] = {
             "model": model or self.default_model,
@@ -182,7 +183,7 @@ class ArkClient:
                     "content": content
                 }
             ],
-            "thinking": {"type": "disabled"},
+            "thinking": {"type": "enabled" if thinking_enabled else "disabled"},
         }
         if structured_output_json:
             request_kwargs["text"] = {"format": {"type": "json_object"}}
@@ -196,6 +197,43 @@ class ArkClient:
                     break
         usage = self._extract_usage(response)
         return {
+            "text": text,
+            "input_tokens": usage["input_tokens"],
+            "output_tokens": usage["output_tokens"],
+        }
+
+    def generate_json_with_usage(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: Optional[str] = None,
+        thinking_enabled: bool = False,
+    ) -> dict[str, Any]:
+        request_kwargs: dict[str, Any] = {
+            "model": model or self.default_model,
+            "input": [
+                {
+                    "role": "system",
+                    "content": [{"type": "input_text", "text": system_prompt}],
+                },
+                {
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": user_prompt}],
+                },
+            ],
+            "thinking": {"type": "enabled" if thinking_enabled else "disabled"},
+            "text": {"format": {"type": "json_object"}},
+        }
+        raw_response = self.client.responses.create(**request_kwargs)
+        text = ""
+        for item in raw_response.output:
+            if item.type == "message" and item.role == "assistant" and item.content:
+                text = item.content[0].text
+                break
+        usage = self._extract_usage(raw_response)
+        parsed = self._extract_json_block(text)
+        return {
+            "data": parsed,
             "text": text,
             "input_tokens": usage["input_tokens"],
             "output_tokens": usage["output_tokens"],

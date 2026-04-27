@@ -26,6 +26,13 @@ class EvaluationTask(Base):
 
     dataset = relationship("Dataset", back_populates="tasks")
     results = relationship("TaskResult", back_populates="task", cascade="all, delete-orphan")
+    prompt_optimizations = relationship(
+        "TaskPromptOptimization",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="TaskPromptOptimization.version_number.desc()",
+        foreign_keys="TaskPromptOptimization.task_id",
+    )
 
     __table_args__ = (
         Index("idx_evaluation_tasks_dataset_id", "dataset_id"),
@@ -83,3 +90,46 @@ class TaskResult(Base):
 
     def __repr__(self):
         return f"<TaskResult(id={self.id}, task_id={self.task_id})>"
+
+
+class TaskPromptOptimization(Base):
+    __tablename__ = "task_prompt_optimizations"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    task_id = Column(BigInteger, ForeignKey("evaluation_tasks.id", ondelete="CASCADE"), nullable=False, comment="原始任务ID")
+    version_number = Column(BigInteger, nullable=False, default=1, server_default="1", comment="版本号")
+    compare_task_id = Column(BigInteger, ForeignKey("evaluation_tasks.id", ondelete="SET NULL"), nullable=True, comment="对比任务ID")
+    optimization_model = Column(String(100), nullable=False, comment="优化模型")
+    sample_count = Column(BigInteger, nullable=False, default=0, server_default="0", comment="纳入分析的样本数")
+    source_prompt = Column(Text, comment="原始提示词")
+    analysis_summary = Column(Text, comment="问题分析摘要")
+    issues_json = Column(Text, comment="问题点 JSON")
+    optimization_strategies_json = Column(Text, comment="优化策略 JSON")
+    optimized_prompt = Column(Text, nullable=False, comment="模型生成的优化后提示词")
+    edited_prompt = Column(Text, comment="人工微调后的提示词")
+    revision_summary_json = Column(Text, comment="提示词修改说明 JSON")
+    analysis_input_tokens = Column(BigInteger, comment="第一阶段输入 tokens")
+    analysis_output_tokens = Column(BigInteger, comment="第一阶段输出 tokens")
+    prompt_input_tokens = Column(BigInteger, comment="第二阶段输入 tokens")
+    prompt_output_tokens = Column(BigInteger, comment="第二阶段输出 tokens")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), comment="更新时间")
+
+    task = relationship(
+        "EvaluationTask",
+        back_populates="prompt_optimizations",
+        foreign_keys=[task_id],
+    )
+    compare_task = relationship(
+        "EvaluationTask",
+        foreign_keys=[compare_task_id],
+    )
+
+    __table_args__ = (
+        Index("idx_task_prompt_optimizations_task_id", "task_id"),
+        Index("idx_task_prompt_optimizations_task_version", "task_id", "version_number", unique=True),
+        Index("idx_task_prompt_optimizations_compare_task_id", "compare_task_id"),
+    )
+
+    def __repr__(self):
+        return f"<TaskPromptOptimization(id={self.id}, task_id={self.task_id}, version={self.version_number}, compare_task_id={self.compare_task_id})>"

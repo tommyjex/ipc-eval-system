@@ -378,6 +378,72 @@ export interface TaskResultSelectionResponse {
   data_ids: number[];
 }
 
+export interface PromptOptimizationIssue {
+  title: string;
+  summary: string;
+  evidence: string[];
+}
+
+export interface PromptOptimizationTaskMetrics {
+  task_id: number;
+  task_name: string;
+  status: TaskStatus;
+  micro_recall: number | null;
+  micro_precision: number | null;
+  macro_recall: number | null;
+  macro_precision: number | null;
+  coverage_rate: number | null;
+  empty_sample_pass_rate: number | null;
+  unscorable_count: number;
+}
+
+export interface PromptOptimizationComparisonResponse {
+  baseline_task: PromptOptimizationTaskMetrics;
+  compare_task: PromptOptimizationTaskMetrics;
+}
+
+export interface PromptOptimizationResponse {
+  optimization_id: number;
+  version_number: number;
+  task_id: number;
+  sample_count: number;
+  source_prompt: string | null;
+  optimization_model: string;
+  analysis_summary: string;
+  issues: PromptOptimizationIssue[];
+  optimization_strategies: string[];
+  optimized_prompt: string;
+  edited_prompt: string;
+  revision_summary: string[];
+  compare_task_id: number | null;
+  comparison: PromptOptimizationComparisonResponse | null;
+  analysis_input_tokens: number | null;
+  analysis_output_tokens: number | null;
+  prompt_input_tokens: number | null;
+  prompt_output_tokens: number | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface PromptOptimizationVersionItem {
+  optimization_id: number;
+  version_number: number;
+  sample_count: number;
+  compare_task_id: number | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface PromptOptimizationVersionListResponse {
+  items: PromptOptimizationVersionItem[];
+  total: number;
+}
+
+export interface PromptOptimizationCompareResponse {
+  optimization: PromptOptimizationResponse;
+  compare_task: EvaluationTask;
+}
+
 export interface PromptTemplate {
   id: number;
   name: string;
@@ -423,6 +489,18 @@ export const taskApi = {
     },
   ) =>
     api.get<TaskResultDetailListResponse>(`/tasks/${taskId}/results/detail`, params),
+  getPromptOptimization: (taskId: number, params?: { optimization_id?: number }) =>
+    api.get<PromptOptimizationResponse>(`/tasks/${taskId}/prompt-optimization`, params),
+  listPromptOptimizations: (taskId: number) =>
+    api.get<PromptOptimizationVersionListResponse>(`/tasks/${taskId}/prompt-optimizations`),
+  optimizePrompt: (taskId: number) =>
+    api.post<PromptOptimizationResponse>(`/tasks/${taskId}/prompt-optimization`, {}),
+  updatePromptOptimization: (taskId: number, data: { edited_prompt: string }, params?: { optimization_id?: number }) =>
+    api.put<PromptOptimizationResponse>(`/tasks/${taskId}/prompt-optimization${params?.optimization_id ? `?optimization_id=${params.optimization_id}` : ''}`, data),
+  createPromptOptimizationCompareTask: (taskId: number, params?: { optimization_id?: number }) =>
+    api.post<PromptOptimizationCompareResponse>(`/tasks/${taskId}/prompt-optimization/compare${params?.optimization_id ? `?optimization_id=${params.optimization_id}` : ''}`, {}),
+  applyPromptOptimization: (taskId: number, params?: { optimization_id?: number }) =>
+    api.post<EvaluationTask>(`/tasks/${taskId}/prompt-optimization/apply${params?.optimization_id ? `?optimization_id=${params.optimization_id}` : ''}`, {}),
   getResultSelection: (taskId: number, params?: { status?: TaskResultStatus[]; scoring_status?: TaskScoringStatus[] }) =>
     api.get<TaskResultSelectionResponse>(`/tasks/${taskId}/results/selection`, params),
 };
