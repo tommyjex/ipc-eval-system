@@ -14,6 +14,13 @@ from app.services.video_frames import DEFAULT_VIDEO_FPS, extract_video_frames
 
 
 class DashScopeClient:
+    VIDEO_FRAME_LIST_MODELS = {
+        "qwen3.6-plus",
+        "qwen3.6-flash",
+        "qwen3-vl-plus",
+        "qwen3-vl-flash",
+    }
+
     def __init__(self):
         settings = get_settings()
         self.api_key = settings.dashscope_api_key
@@ -98,6 +105,77 @@ class DashScopeClient:
         response.encoding = response.encoding or "utf-8"
         return response.text
 
+    def _should_use_video_frame_list_content(self, model: Optional[str]) -> bool:
+        if not model:
+            return False
+        return model in self.VIDEO_FRAME_LIST_MODELS
+
+    def _build_messages_content_log_view(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        content_view: list[dict[str, Any]] = []
+        for message in messages:
+            raw_content = message.get("content")
+            if isinstance(raw_content, str):
+                content_view.append(
+                    {
+                        "role": message.get("role"),
+                        "content_type": "text",
+                        "text_preview": raw_content[:120],
+                    }
+                )
+                continue
+
+            if isinstance(raw_content, list):
+                item_views: list[dict[str, Any]] = []
+                for item in raw_content:
+                    if not isinstance(item, dict):
+                        item_views.append({"type": type(item).__name__})
+                        continue
+
+                    if "video" in item and isinstance(item["video"], list):
+                        item_views.append(
+                            {
+                                "type": "video",
+                                "fps": item.get("fps"),
+                                "frame_count": len(item["video"]),
+                                "frame_preview": item["video"][:3],
+                            }
+                        )
+                    elif "image" in item:
+                        item_views.append(
+                            {
+                                "type": "image",
+                                "image": item.get("image"),
+                            }
+                        )
+                    elif "text" in item:
+                        text_value = item.get("text")
+                        item_views.append(
+                            {
+                                "type": "text",
+                                "text_preview": text_value[:120] if isinstance(text_value, str) else None,
+                            }
+                        )
+                    else:
+                        item_views.append({"type": "unknown", "keys": sorted(item.keys())})
+
+                content_view.append(
+                    {
+                        "role": message.get("role"),
+                        "content_type": "list",
+                        "items": item_views,
+                    }
+                )
+                continue
+
+            content_view.append(
+                {
+                    "role": message.get("role"),
+                    "content_type": type(raw_content).__name__,
+                }
+            )
+
+        return content_view
+
     def build_annotation_content(
         self,
         file_url: str,
@@ -107,6 +185,7 @@ class DashScopeClient:
         gif_frame_urls: Optional[list[str]] = None,
         fps: float = DEFAULT_VIDEO_FPS,
         model_file_url: Optional[str] = None,
+        model: Optional[str] = None,
     ) -> dict[str, Any]:
         lower_file_type = file_type.lower()
         video_types = {"mp4", "avi", "mov", "mkv", "flv", "wmv", "webm"}
@@ -156,10 +235,16 @@ class DashScopeClient:
                 object_prefix="temp/dashscope_video_frames",
                 public_download_url=True,
             )
-            media_content: list[dict[str, Any]] = [
-                *({"image": frame_url} for frame_url in frame_urls),
-                {"text": f"这是从视频中按固定时间间隔抽取的一组关键帧图片。{prompt}"},
-            ]
+            if self._should_use_video_frame_list_content(model) and frame_urls:
+                media_content = [
+                    {"video": frame_urls, "fps": fps},
+                    {"text": f"这是从视频中按固定时间间隔抽取的一组关键帧图片。{prompt}"},
+                ]
+            else:
+                media_content = [
+                    *({"image": frame_url} for frame_url in frame_urls),
+                    {"text": f"这是从视频中按固定时间间隔抽取的一组关键帧图片。{prompt}"},
+                ]
         else:
             media_content = [
                 {"image": model_file_url or file_url},
@@ -295,6 +380,12 @@ class DashScopeClient:
         }
         if structured_output_json:
             payload["response_format"] = {"type": "json_object"}
+        self._logger.info(
+            "ALIYUN_DEBUG request content: endpoint=%s model=%s messages_content=%s",
+            endpoint,
+            payload.get("model"),
+            json.dumps(self._build_messages_content_log_view(messages), ensure_ascii=False),
+        )
         response_payload = self._post(endpoint, payload)
         if self.debug_response:
             # Avoid log flooding: print full JSON once per request but keep it on one line.

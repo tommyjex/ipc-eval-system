@@ -1474,44 +1474,54 @@ export const TaskDetailPage: React.FC = () => {
                     </ul>
                   </div>
                 )}
-                {promptOptimizationResult.comparison && (
-                  <div className="rounded bg-slate-50 p-4">
-                    <div className="mb-3 flex items-center justify-between gap-4">
-                      <div className="text-sm font-medium text-slate-800">优化前后效果对比</div>
-                      <div className="text-xs text-slate-500">
-                        对比任务状态：{getStatusBadge(promptOptimizationResult.comparison.compare_task.status)}
-                      </div>
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <div className="rounded border bg-white p-4">
-                        <div className="mb-2 text-sm font-medium text-gray-900">优化前</div>
-                        <div className="text-xs text-gray-500">{promptOptimizationResult.comparison.baseline_task.task_name}</div>
-                        <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-gray-700">
-                          {renderStaticMetricCard('Micro 召回率', promptOptimizationResult.comparison.baseline_task.micro_recall)}
-                          {renderStaticMetricCard('Micro 精确率', promptOptimizationResult.comparison.baseline_task.micro_precision)}
-                          {renderStaticMetricCard('Macro 召回率', promptOptimizationResult.comparison.baseline_task.macro_recall)}
-                          {renderStaticMetricCard('Macro 精确率', promptOptimizationResult.comparison.baseline_task.macro_precision)}
-                          {renderStaticMetricCard('覆盖率', promptOptimizationResult.comparison.baseline_task.coverage_rate)}
-                          {renderStaticMetricCard('空样本通过率', promptOptimizationResult.comparison.baseline_task.empty_sample_pass_rate)}
-                          {renderStaticMetricCard('不可评分数', promptOptimizationResult.comparison.baseline_task.unscorable_count, '')}
-                        </div>
-                      </div>
-                      <div className="rounded border bg-white p-4">
-                        <div className="mb-2 text-sm font-medium text-gray-900">优化后</div>
-                        <div className="text-xs text-gray-500">{promptOptimizationResult.comparison.compare_task.task_name}</div>
-                        <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-gray-700">
-                          {renderComparisonMetric('Micro 召回率', promptOptimizationResult.comparison.baseline_task.micro_recall, promptOptimizationResult.comparison.compare_task.micro_recall)}
-                          {renderComparisonMetric('Micro 精确率', promptOptimizationResult.comparison.baseline_task.micro_precision, promptOptimizationResult.comparison.compare_task.micro_precision)}
-                          {renderComparisonMetric('Macro 召回率', promptOptimizationResult.comparison.baseline_task.macro_recall, promptOptimizationResult.comparison.compare_task.macro_recall)}
-                          {renderComparisonMetric('Macro 精确率', promptOptimizationResult.comparison.baseline_task.macro_precision, promptOptimizationResult.comparison.compare_task.macro_precision)}
-                          {renderComparisonMetric('覆盖率', promptOptimizationResult.comparison.baseline_task.coverage_rate, promptOptimizationResult.comparison.compare_task.coverage_rate)}
-                          {renderComparisonMetric('空样本通过率', promptOptimizationResult.comparison.baseline_task.empty_sample_pass_rate, promptOptimizationResult.comparison.compare_task.empty_sample_pass_rate)}
-                          {renderComparisonMetric('不可评分数', promptOptimizationResult.comparison.baseline_task.unscorable_count, promptOptimizationResult.comparison.compare_task.unscorable_count, 'lower', '')}
-                        </div>
-                      </div>
+                <div className="rounded bg-slate-50 p-4">
+                  <div className="mb-3 flex items-center justify-between gap-4">
+                    <div className="text-sm font-medium text-slate-800">优化前后效果对比</div>
+                    <div className="text-xs text-slate-500">
+                      {promptOptimizationResult.comparison ? (
+                        <>对比任务状态：{getStatusBadge(promptOptimizationResult.comparison.compare_task.status)}</>
+                      ) : (
+                        '当前版本尚未生成对比结果'
+                      )}
                     </div>
                   </div>
-                )}
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded border bg-white p-4">
+                      <div className="mb-2 text-sm font-medium text-gray-900">优化前</div>
+                      <div className="text-xs text-gray-500">{task.name}</div>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-gray-700">
+                        {renderStaticMetricCard('Micro 召回率', microRecall)}
+                        {renderStaticMetricCard('Micro 精确率', microPrecision)}
+                        {renderStaticMetricCard('Macro 召回率', macroRecall)}
+                        {renderStaticMetricCard('Macro 精确率', macroPrecision)}
+                        {renderStaticMetricCard('覆盖率', coverageRate)}
+                        {renderStaticMetricCard('空样本通过率', emptySamplePassRate)}
+                        {renderStaticMetricCard('不可评分数', unscorableCount, '')}
+                      </div>
+                    </div>
+                    <div className="rounded border bg-white p-4">
+                      <div className="mb-2 text-sm font-medium text-gray-900">优化后</div>
+                      <div className="text-xs text-gray-500">
+                        {promptOptimizationResult.comparison ? promptOptimizationResult.comparison.compare_task.task_name : `版本 V${promptOptimizationResult.version_number}`}
+                      </div>
+                      {promptOptimizationResult.comparison ? (
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-gray-700">
+                          {renderComparisonMetric('Micro 召回率', microRecall, promptOptimizationResult.comparison.compare_task.micro_recall)}
+                          {renderComparisonMetric('Micro 精确率', microPrecision, promptOptimizationResult.comparison.compare_task.micro_precision)}
+                          {renderComparisonMetric('Macro 召回率', macroRecall, promptOptimizationResult.comparison.compare_task.macro_recall)}
+                          {renderComparisonMetric('Macro 精确率', macroPrecision, promptOptimizationResult.comparison.compare_task.macro_precision)}
+                          {renderComparisonMetric('覆盖率', coverageRate, promptOptimizationResult.comparison.compare_task.coverage_rate)}
+                          {renderComparisonMetric('空样本通过率', emptySamplePassRate, promptOptimizationResult.comparison.compare_task.empty_sample_pass_rate)}
+                          {renderComparisonMetric('不可评分数', unscorableCount, promptOptimizationResult.comparison.compare_task.unscorable_count, 'lower', '')}
+                        </div>
+                      ) : (
+                        <div className="mt-3 rounded border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                          当前优化版本还没有对应的评分对比结果。点击右侧“新建对比任务并运行评分”后，这里会展示与原版提示词的效果对比。
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           )}

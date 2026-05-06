@@ -84,7 +84,9 @@ class ArkClient:
         fps: float = DEFAULT_VIDEO_FPS,
         model_file_url: Optional[str] = None,
         direct_video_url: bool = False,
+        model: Optional[str] = None,
     ) -> list[dict]:
+        _ = model  # Keep client method signature aligned with DashScopeClient.
         video_types = {"mp4", "avi", "mov", "mkv", "flv", "wmv"}
         is_video = file_type.lower() in video_types
         is_gif = file_type.lower() == "gif"

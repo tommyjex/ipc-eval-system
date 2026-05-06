@@ -484,6 +484,7 @@ def _run_single_task_result(
                     custom_tags,
                     fps=fps,
                     model_file_url=model_download_url,
+                    model=target_model,
                 )
                 inference_result = inference_client.annotate_with_usage(
                     content,

@@ -193,7 +193,10 @@ export const TaskListPage: React.FC = () => {
     aliyun: {
       label: '阿里千问',
       models: [
+        { value: 'qwen3-vl-plus', label: 'qwen3-vl-plus' },
+        { value: 'qwen3-vl-flash', label: 'qwen3-vl-flash' },
         { value: 'qwen3.6-plus', label: 'qwen3.6-plus' },
+        { value: 'qwen3.6-flash', label: 'qwen3.6-flash' },
         { value: 'qwen3.5-plus', label: 'qwen3.5-plus' },
         { value: 'qwen3.5-flash', label: 'qwen3.5-flash' },
         { value: 'qwen-flash', label: 'qwen-flash' },
