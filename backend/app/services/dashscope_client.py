@@ -30,9 +30,12 @@ class DashScopeClient:
         self._logger = logging.getLogger(__name__)
 
     def extract_gif_frames(self, gif_url: str, max_frames: int = 5) -> list[str]:
+        download_succeeded = False
+        frame_urls: list[str] = []
         try:
             response = requests.get(gif_url, timeout=30)
             response.raise_for_status()
+            download_succeeded = True
 
             gif = Image.open(BytesIO(response.content))
             frames = []
@@ -50,12 +53,18 @@ class DashScopeClient:
                 pass
 
             if not frames:
+                self._logger.info(
+                    "ALIYUN_DEBUG gif extraction: download_succeeded=%s frame_count=%s frame_urls=%s gif_url=%s",
+                    download_succeeded,
+                    0,
+                    json.dumps(frame_urls, ensure_ascii=False),
+                    gif_url,
+                )
                 return []
 
             from app.utils import get_tos_client
 
             tos_client = get_tos_client()
-            frame_urls: list[str] = []
 
             for index, frame in enumerate(frames):
                 with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
@@ -72,9 +81,23 @@ class DashScopeClient:
 
                     frame_urls.append(tos_client.get_download_url(object_key, public_endpoint=True))
 
+            self._logger.info(
+                "ALIYUN_DEBUG gif extraction: download_succeeded=%s frame_count=%s frame_urls=%s gif_url=%s",
+                download_succeeded,
+                len(frame_urls),
+                json.dumps(frame_urls, ensure_ascii=False),
+                gif_url,
+            )
             return frame_urls
         except Exception as exc:
-            print(f"DashScope GIF frame extraction failed: {exc}")
+            self._logger.warning(
+                "ALIYUN_DEBUG gif extraction failed: download_succeeded=%s frame_count=%s frame_urls=%s gif_url=%s error=%s",
+                download_succeeded,
+                len(frame_urls),
+                json.dumps(frame_urls, ensure_ascii=False),
+                gif_url,
+                str(exc),
+            )
             return []
 
     def _build_prompt(
@@ -109,6 +132,24 @@ class DashScopeClient:
         if not model:
             return False
         return model in self.VIDEO_FRAME_LIST_MODELS
+
+    def _build_frame_sequence_content(
+        self,
+        frame_urls: list[str],
+        prompt: str,
+        fps: float,
+        model: Optional[str],
+    ) -> list[dict[str, Any]]:
+        if self._should_use_video_frame_list_content(model) and len(frame_urls) >= 4:
+            return [
+                {"video": frame_urls, "fps": fps},
+                {"text": prompt},
+            ]
+
+        return [
+            *({"image": frame_url} for frame_url in frame_urls),
+            {"text": prompt},
+        ]
 
     def _build_messages_content_log_view(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         content_view: list[dict[str, Any]] = []
@@ -214,10 +255,12 @@ class DashScopeClient:
                 "messages": [
                     {
                         "role": "user",
-                        "content": [
-                            {"video": gif_frame_urls, "fps": fps},
-                            {"text": prompt},
-                        ],
+                        "content": self._build_frame_sequence_content(
+                            gif_frame_urls,
+                            prompt,
+                            fps,
+                            model,
+                        ),
                     }
                 ],
             }
@@ -235,16 +278,12 @@ class DashScopeClient:
                 object_prefix="temp/dashscope_video_frames",
                 public_download_url=True,
             )
-            if self._should_use_video_frame_list_content(model) and frame_urls:
-                media_content = [
-                    {"video": frame_urls, "fps": fps},
-                    {"text": f"这是从视频中按固定时间间隔抽取的一组关键帧图片。{prompt}"},
-                ]
-            else:
-                media_content = [
-                    *({"image": frame_url} for frame_url in frame_urls),
-                    {"text": f"这是从视频中按固定时间间隔抽取的一组关键帧图片。{prompt}"},
-                ]
+            media_content = self._build_frame_sequence_content(
+                frame_urls,
+                f"这是从视频中按固定时间间隔抽取的一组关键帧图片。{prompt}",
+                fps,
+                model,
+            )
         else:
             media_content = [
                 {"image": model_file_url or file_url},
@@ -381,6 +420,13 @@ class DashScopeClient:
         if structured_output_json:
             payload["response_format"] = {"type": "json_object"}
         self._logger.info(
+            "ALIYUN_DEBUG request config: endpoint=%s model=%s structured_output_json=%s response_format_type=%s",
+            endpoint,
+            payload.get("model"),
+            structured_output_json,
+            (payload.get("response_format") or {}).get("type"),
+        )
+        self._logger.info(
             "ALIYUN_DEBUG request content: endpoint=%s model=%s messages_content=%s",
             endpoint,
             payload.get("model"),
@@ -433,13 +479,18 @@ class DashScopeClient:
         structured_output_json: bool = False,
     ) -> dict[str, Any]:
         frame_urls = self.extract_gif_frames(gif_url, max_frames=max_frames)
+        if not frame_urls:
+            raise RuntimeError(
+                "GIF拆帧失败，未生成可供模型访问的帧图片，已中止本次模型调用。"
+            )
         content = self.build_annotation_content(
             gif_url,
             "gif",
             annotation_prompt,
             custom_tags,
-            gif_frame_urls=frame_urls or None,
+            gif_frame_urls=frame_urls,
             fps=fps,
+            model=model,
         )
         return self.annotate_with_usage(
             content,

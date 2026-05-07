@@ -75,6 +75,9 @@ def _reset_task_result_metrics(result: TaskResult):
     result.metric_version = None
 
 _running_tasks: dict[str, dict] = {}
+ARK_UNSUPPORTED_JSON_OBJECT_MODELS = {
+    "doubao-seed-2-0-pro-260215",
+}
 
 
 def _get_inference_client(model_provider: Optional[str]):
@@ -84,6 +87,16 @@ def _get_inference_client(model_provider: Optional[str]):
     if provider == "aliyun":
         return get_dashscope_client()
     raise ValueError(f"暂不支持的模型供应商: {provider}")
+
+
+def _should_use_structured_output_json(
+    model_provider: Optional[str],
+    target_model: Optional[str],
+) -> bool:
+    provider = (model_provider or "volcengine").lower()
+    if provider == "volcengine" and (target_model or "") in ARK_UNSUPPORTED_JSON_OBJECT_MODELS:
+        return False
+    return True
 
 
 def _mark_task_results_failed(db: Session, task_id: int, error_message: str):
@@ -466,6 +479,7 @@ def _run_single_task_result(
             model_download_url = tos_client.get_download_url(data.tos_key, public_endpoint=True)
             lower_file_type = data.file_type.lower()
             is_gif = lower_file_type == "gif"
+            use_structured_output_json = _should_use_structured_output_json(model_provider, target_model)
 
             if is_gif:
                 inference_result = inference_client.annotate_gif_with_usage(
@@ -474,7 +488,7 @@ def _run_single_task_result(
                     custom_tags,
                     target_model,
                     fps=fps,
-                    structured_output_json=True,
+                    structured_output_json=use_structured_output_json,
                 )
             else:
                 content = inference_client.build_annotation_content(
@@ -489,7 +503,7 @@ def _run_single_task_result(
                 inference_result = inference_client.annotate_with_usage(
                     content,
                     target_model,
-                    structured_output_json=True,
+                    structured_output_json=use_structured_output_json,
                 )
 
             db.refresh(result)

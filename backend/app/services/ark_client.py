@@ -1,4 +1,5 @@
 from typing import Any, Optional
+import logging
 from volcenginesdkarkruntime import Ark
 from app.core.config import get_settings
 import tempfile
@@ -17,6 +18,7 @@ class ArkClient:
         settings = get_settings()
         self.base_url = settings.ark_base_url
         self.default_model = settings.ark_model
+        self._logger = logging.getLogger(__name__)
         self.client = Ark(
             api_key=settings.ark_api_key,
             base_url=self.base_url,
@@ -25,9 +27,12 @@ class ArkClient:
         )
 
     def extract_gif_frames(self, gif_url: str, max_frames: int = 5) -> list[str]:
+        download_succeeded = False
+        frame_urls: list[str] = []
         try:
             response = requests.get(gif_url, timeout=30)
             response.raise_for_status()
+            download_succeeded = True
             
             gif = Image.open(BytesIO(response.content))
             
@@ -46,12 +51,18 @@ class ArkClient:
                 pass
             
             if len(frames) == 0:
+                self._logger.info(
+                    "ARK_DEBUG gif extraction: download_succeeded=%s frame_count=%s frame_urls=%s gif_url=%s",
+                    download_succeeded,
+                    0,
+                    json.dumps(frame_urls, ensure_ascii=False),
+                    gif_url,
+                )
                 return []
             
             from app.utils import get_tos_client
             tos_client = get_tos_client()
             
-            frame_urls = []
             for i, frame in enumerate(frames):
                 with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
                     frame.save(tmp.name, 'JPEG', quality=85)
@@ -69,9 +80,23 @@ class ArkClient:
                     frame_url = tos_client.get_download_url(object_key, public_endpoint=True)
                     frame_urls.append(frame_url)
             
+            self._logger.info(
+                "ARK_DEBUG gif extraction: download_succeeded=%s frame_count=%s frame_urls=%s gif_url=%s",
+                download_succeeded,
+                len(frame_urls),
+                json.dumps(frame_urls, ensure_ascii=False),
+                gif_url,
+            )
             return frame_urls
         except Exception as e:
-            print(f"Error extracting GIF frames: {e}")
+            self._logger.warning(
+                "ARK_DEBUG gif extraction failed: download_succeeded=%s frame_count=%s frame_urls=%s gif_url=%s error=%s",
+                download_succeeded,
+                len(frame_urls),
+                json.dumps(frame_urls, ensure_ascii=False),
+                gif_url,
+                str(e),
+            )
             return []
 
     def build_annotation_content(
@@ -189,6 +214,13 @@ class ArkClient:
         }
         if structured_output_json:
             request_kwargs["text"] = {"format": {"type": "json_object"}}
+        self._logger.info(
+            "ARK_DEBUG request config: model=%s structured_output_json=%s text_format_type=%s thinking_enabled=%s",
+            request_kwargs.get("model"),
+            structured_output_json,
+            ((request_kwargs.get("text") or {}).get("format") or {}).get("type"),
+            thinking_enabled,
+        )
 
         response = self.client.responses.create(**request_kwargs)
         text = ""
@@ -349,13 +381,14 @@ class ArkClient:
         structured_output_json: bool = False,
     ) -> dict[str, Any]:
         frame_urls = self.extract_gif_frames(gif_url, max_frames)
-        
-        if frame_urls:
-            content = self.build_annotation_content(
-                gif_url, "gif", annotation_prompt, custom_tags, gif_frame_urls=frame_urls, fps=fps
+        if not frame_urls:
+            raise RuntimeError(
+                "GIF拆帧失败，未生成可供模型访问的帧图片，已中止本次模型调用。"
             )
-        else:
-            content = self.build_annotation_content(gif_url, "gif", annotation_prompt, custom_tags, fps=fps)
+
+        content = self.build_annotation_content(
+            gif_url, "gif", annotation_prompt, custom_tags, gif_frame_urls=frame_urls, fps=fps
+        )
         
         return self.annotate_with_usage(
             content,
