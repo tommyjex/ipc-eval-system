@@ -166,9 +166,9 @@ export const TaskListPage: React.FC = () => {
     description: '',
     content: '',
   });
-  const [page] = useState(1);
-  const [, setTotal] = useState(0);
-  const [pageSize] = useState<50 | 100>(50);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [pageSize, setPageSize] = useState<20 | 50 | 100>(50);
   const [statusFilter, setStatusFilter] = useState<TaskStatus[]>([]);
   const [datasetFilter, setDatasetFilter] = useState<string[]>([]);
   const [providerFilter, setProviderFilter] = useState<ModelProvider[]>([]);
@@ -281,6 +281,10 @@ export const TaskListPage: React.FC = () => {
     fetchDatasets();
     fetchPromptTemplates();
   }, [page, pageSize, statusFilter, datasetFilter, providerFilter, targetModelFilter, sortOption]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [pageSize, statusFilter, datasetFilter, providerFilter, targetModelFilter, sortOption]);
 
   useEffect(() => {
     const checkCompareEnabled = async () => {
@@ -471,6 +475,9 @@ export const TaskListPage: React.FC = () => {
         .map((model) => [model.value, { value: model.value, label: model.label }]),
     ).values(),
   );
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const pageStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const pageEnd = total === 0 ? 0 : Math.min(page * pageSize, total);
 
   return (
     <div className="p-6">
@@ -527,132 +534,178 @@ export const TaskListPage: React.FC = () => {
       {loading ? (
         <div className="text-center py-10">加载中...</div>
       ) : (
-        <div className="bg-white rounded-lg shadow overflow-x-auto">
-          <table className="min-w-[1560px] w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left">任务名称</th>
-                <th className="px-4 py-3 text-left">
-                  <div className="flex items-center gap-2 whitespace-nowrap">
-                    <span className="whitespace-nowrap">评测集</span>
-                    <MultiSelectDropdown
-                      label="评测集"
-                      options={datasetOptions}
-                      value={datasetFilter}
-                      onChange={(next) => setDatasetFilter(next)}
-                    />
-                  </div>
-                </th>
-                <th className="whitespace-nowrap px-4 py-3 text-left">用户名</th>
-                <th className="w-[80px] px-3 py-3 text-left">
-                  <div className="flex items-center gap-2 whitespace-nowrap">
-                    <span className="whitespace-nowrap">模型供应商</span>
-                    <MultiSelectDropdown
-                      label="模型供应商"
-                      options={providerOptions}
-                      value={providerFilter}
-                      onChange={(next) => setProviderFilter(next)}
-                    />
-                  </div>
-                </th>
-                <th className="min-w-[240px] whitespace-nowrap px-4 py-3 text-left">
-                  <div className="flex items-center gap-2 whitespace-nowrap">
-                    <span className="whitespace-nowrap">目标模型</span>
-                    <MultiSelectDropdown
-                      label="目标模型"
-                      options={targetModelOptions}
-                      value={targetModelFilter}
-                      onChange={(next) => setTargetModelFilter(next)}
-                    />
-                  </div>
-                </th>
-                <th className="w-[64px] px-3 py-3 text-left">
-                  <div className="flex items-center gap-2 whitespace-nowrap">
-                    <span className="whitespace-nowrap">状态</span>
-                    <MultiSelectDropdown
-                      label="状态"
-                      options={TASK_STATUS_OPTIONS}
-                      value={statusFilter}
-                      onChange={(next) => setStatusFilter(next)}
-                    />
-                  </div>
-                </th>
-                <th className="px-4 py-3 text-left whitespace-nowrap">Micro 召回率</th>
-                <th className="px-4 py-3 text-left whitespace-nowrap">Micro 精确率</th>
-                <th className="px-4 py-3 text-left whitespace-nowrap">平均输入 Token</th>
-                <th className="px-4 py-3 text-left whitespace-nowrap">平均输出 Token</th>
-                <th className="px-4 py-3 text-left">创建时间</th>
-                <th className="min-w-[160px] whitespace-nowrap px-4 py-3 text-left">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tasks.length === 0 ? (
+        <>
+          <div className="bg-white rounded-lg shadow overflow-x-auto">
+            <table className="min-w-[1560px] w-full">
+              <thead className="bg-gray-50">
                 <tr>
-                  <td colSpan={12} className="text-center py-10 text-gray-500">
-                    当前筛选条件下暂无评测任务
-                  </td>
-                </tr>
-              ) : (
-                tasks.map((task) => (
-                <tr key={task.id} className="border-t hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <span
-                      onClick={() => navigate(`/tasks/${task.id}`)}
-                      className="text-blue-600 hover:text-blue-800 cursor-pointer hover:underline"
-                    >
-                      {task.name}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">{getDatasetLabel(task.dataset_id)}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{task.username || '-'}</td>
-                  <td className="w-[80px] px-3 py-3">{getProviderLabel(task.model_provider)}</td>
-                  <td className="min-w-[240px] whitespace-nowrap px-4 py-3">{task.target_model}</td>
-                  <td className="w-[64px] px-3 py-3">{getStatusBadge(task.status)}</td>
-                  <td className="px-4 py-3">{formatMetric(task.micro_recall)}</td>
-                  <td className="px-4 py-3">{formatMetric(task.micro_precision)}</td>
-                  <td className="px-4 py-3">{formatTokenMetric(task.avg_input_tokens)}</td>
-                  <td className="px-4 py-3">{formatTokenMetric(task.avg_output_tokens)}</td>
-                  <td className="px-4 py-3">
-                    {new Date(task.created_at).toLocaleString('zh-CN')}
-                  </td>
-                  <td className="min-w-[160px] whitespace-nowrap px-4 py-3">
-                    <div className="flex items-center space-x-2 whitespace-nowrap">
-                      <button
-                        onClick={() => navigate(`/tasks/${task.id}`)}
-                        className="text-blue-600 hover:text-blue-800"
-                      >
-                        查看
-                      </button>
-                      {task.status === 'pending' && (
-                        <button
-                          onClick={() => handleRun(task.id)}
-                          className="text-green-600 hover:text-green-800"
-                        >
-                          运行
-                        </button>
-                      )}
-                      {task.status === 'failed' && (
-                        <button
-                          onClick={() => handleRun(task.id)}
-                          className="text-green-600 hover:text-green-800"
-                        >
-                          重新运行
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDelete(task.id)}
-                        className="text-red-600 hover:text-red-800"
-                      >
-                        删除
-                      </button>
+                  <th className="px-4 py-3 text-left">任务名称</th>
+                  <th className="px-4 py-3 text-left">
+                    <div className="flex items-center gap-2 whitespace-nowrap">
+                      <span className="whitespace-nowrap">评测集</span>
+                      <MultiSelectDropdown
+                        label="评测集"
+                        options={datasetOptions}
+                        value={datasetFilter}
+                        onChange={(next) => setDatasetFilter(next)}
+                      />
                     </div>
-                  </td>
+                  </th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left">用户名</th>
+                  <th className="w-[80px] px-3 py-3 text-left">
+                    <div className="flex items-center gap-2 whitespace-nowrap">
+                      <span className="whitespace-nowrap">模型供应商</span>
+                      <MultiSelectDropdown
+                        label="模型供应商"
+                        options={providerOptions}
+                        value={providerFilter}
+                        onChange={(next) => setProviderFilter(next)}
+                      />
+                    </div>
+                  </th>
+                  <th className="min-w-[240px] whitespace-nowrap px-4 py-3 text-left">
+                    <div className="flex items-center gap-2 whitespace-nowrap">
+                      <span className="whitespace-nowrap">目标模型</span>
+                      <MultiSelectDropdown
+                        label="目标模型"
+                        options={targetModelOptions}
+                        value={targetModelFilter}
+                        onChange={(next) => setTargetModelFilter(next)}
+                      />
+                    </div>
+                  </th>
+                  <th className="w-[64px] px-3 py-3 text-left">
+                    <div className="flex items-center gap-2 whitespace-nowrap">
+                      <span className="whitespace-nowrap">状态</span>
+                      <MultiSelectDropdown
+                        label="状态"
+                        options={TASK_STATUS_OPTIONS}
+                        value={statusFilter}
+                        onChange={(next) => setStatusFilter(next)}
+                      />
+                    </div>
+                  </th>
+                  <th className="px-4 py-3 text-left whitespace-nowrap">Micro 召回率</th>
+                  <th className="px-4 py-3 text-left whitespace-nowrap">Micro 精确率</th>
+                  <th className="px-4 py-3 text-left whitespace-nowrap">平均输入 Token</th>
+                  <th className="px-4 py-3 text-left whitespace-nowrap">平均输出 Token</th>
+                  <th className="px-4 py-3 text-left">创建时间</th>
+                  <th className="min-w-[160px] whitespace-nowrap px-4 py-3 text-left">操作</th>
                 </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {tasks.length === 0 ? (
+                  <tr>
+                    <td colSpan={12} className="text-center py-10 text-gray-500">
+                      当前筛选条件下暂无评测任务
+                    </td>
+                  </tr>
+                ) : (
+                  tasks.map((task) => (
+                    <tr key={task.id} className="border-t hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <span
+                          onClick={() => navigate(`/tasks/${task.id}`)}
+                          className="text-blue-600 hover:text-blue-800 cursor-pointer hover:underline"
+                        >
+                          {task.name}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">{getDatasetLabel(task.dataset_id)}</td>
+                      <td className="whitespace-nowrap px-4 py-3">{task.username || '-'}</td>
+                      <td className="w-[80px] px-3 py-3">{getProviderLabel(task.model_provider)}</td>
+                      <td className="min-w-[240px] whitespace-nowrap px-4 py-3">{task.target_model}</td>
+                      <td className="w-[64px] px-3 py-3">{getStatusBadge(task.status)}</td>
+                      <td className="px-4 py-3">{formatMetric(task.micro_recall)}</td>
+                      <td className="px-4 py-3">{formatMetric(task.micro_precision)}</td>
+                      <td className="px-4 py-3">{formatTokenMetric(task.avg_input_tokens)}</td>
+                      <td className="px-4 py-3">{formatTokenMetric(task.avg_output_tokens)}</td>
+                      <td className="px-4 py-3">
+                        {new Date(task.created_at).toLocaleString('zh-CN')}
+                      </td>
+                      <td className="min-w-[160px] whitespace-nowrap px-4 py-3">
+                        <div className="flex items-center space-x-2 whitespace-nowrap">
+                          <button
+                            onClick={() => navigate(`/tasks/${task.id}`)}
+                            className="text-blue-600 hover:text-blue-800"
+                          >
+                            查看
+                          </button>
+                          {task.status === 'pending' && (
+                            <button
+                              onClick={() => handleRun(task.id)}
+                              className="text-green-600 hover:text-green-800"
+                            >
+                              运行
+                            </button>
+                          )}
+                          {task.status === 'failed' && (
+                            <button
+                              onClick={() => handleRun(task.id)}
+                              className="text-green-600 hover:text-green-800"
+                            >
+                              重新运行
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDelete(task.id)}
+                            className="text-red-600 hover:text-red-800"
+                          >
+                            删除
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-4 flex flex-col gap-3 rounded-lg bg-white px-4 py-3 shadow sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm text-gray-600">
+              共 {total} 条，当前显示 {pageStart}-{pageEnd} 条
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="flex items-center gap-2">
+                <label htmlFor="task-page-size" className="text-sm text-gray-600">
+                  每页
+                </label>
+                <select
+                  id="task-page-size"
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number(e.target.value) as 20 | 50 | 100)}
+                  className="rounded border px-3 py-2 text-sm"
+                >
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+                <span className="text-sm text-gray-600">条</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                  disabled={page <= 1}
+                  className="rounded border px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+                >
+                  上一页
+                </button>
+                <span className="text-sm text-gray-600">
+                  第 {page} / {totalPages} 页
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                  disabled={page >= totalPages}
+                  className="rounded border px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+                >
+                  下一页
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {showCreateModal && (

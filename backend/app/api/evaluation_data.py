@@ -417,9 +417,6 @@ def delete_evaluation_data(dataset_id: int, data_id: int, db: Session = Depends(
     if not eval_data:
         raise HTTPException(status_code=404, detail="评测数据不存在")
 
-    tos_client = get_tos_client()
-    tos_client.delete_object(eval_data.tos_key)
-
     db.delete(eval_data)
     db.commit()
     return {"message": "删除成功"}
