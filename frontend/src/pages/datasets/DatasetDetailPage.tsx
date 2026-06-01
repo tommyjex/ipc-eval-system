@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { datasetApi, evaluationDataApi, annotationApi, buildEvaluationDataPreviewUrl } from '../../api';
-import type { Dataset, EvaluationData, DatasetType, DatasetScene, TOSFolder, TOSFile } from '../../api';
+import type { Dataset, EvaluationData, DatasetType, DatasetScene, TOSFolder, TOSFile, Annotation } from '../../api';
 import { FileUpload } from '../../components/upload/FileUpload';
 
 export const DatasetDetailPage: React.FC = () => {
@@ -78,6 +78,32 @@ export const DatasetDetailPage: React.FC = () => {
     setPreviewData((prev) => (prev && prev.id === updatedData.id ? updatedData : prev));
   };
 
+  const markDataAnnotated = (dataId: number, annotation: Annotation) => {
+    const updatedAt = annotation.updated_at || annotation.created_at || new Date().toISOString();
+    setDataList((prev) =>
+      prev.map((item) =>
+        item.id === dataId
+          ? {
+              ...item,
+              status: 'annotated',
+              annotation,
+              updated_at: updatedAt,
+            }
+          : item,
+      ),
+    );
+    setPreviewData((prev) =>
+      prev && prev.id === dataId
+        ? {
+            ...prev,
+            status: 'annotated',
+            annotation,
+            updated_at: updatedAt,
+          }
+        : prev,
+    );
+  };
+
   const fetchSingleData = async (dataId: number) => {
     if (!id) return;
     try {
@@ -94,14 +120,6 @@ export const DatasetDetailPage: React.FC = () => {
     } catch (err) {
       console.error('刷新单条数据失败:', err);
     }
-  };
-
-  const removeRowIfFiltered = (dataId: number) => {
-    if (statusFilter !== 'pending') return false;
-    // In pending-only mode, once a row becomes annotated it should disappear.
-    setDataList((prev) => prev.filter((item) => item.id !== dataId));
-    setDataTotal((prev) => Math.max(0, prev - 1));
-    return true;
   };
 
   useEffect(() => {
@@ -243,17 +261,19 @@ export const DatasetDetailPage: React.FC = () => {
     setSaving(true);
     try {
       const data = dataList.find(d => d.id === dataId);
+      let savedAnnotation: Annotation;
       if (data?.annotation) {
-        await annotationApi.update(data.annotation.id, { ground_truth: annotationText });
+        savedAnnotation = await annotationApi.update(data.annotation.id, { ground_truth: annotationText });
       } else {
-        await annotationApi.create(dataId, { 
+        savedAnnotation = await annotationApi.create(dataId, { 
           ground_truth: annotationText, 
           annotation_type: 'manual' 
         });
       }
       setEditingAnnotation(null);
       setAnnotationText('');
-      if (!removeRowIfFiltered(dataId)) {
+      markDataAnnotated(dataId, savedAnnotation);
+      if (statusFilter !== 'pending') {
         await fetchSingleData(dataId);
       }
     } catch (err) {
@@ -278,7 +298,10 @@ export const DatasetDetailPage: React.FC = () => {
               next.delete(dataId);
               return next;
             });
-            if (!removeRowIfFiltered(dataId)) {
+            if (statusFilter === 'pending') {
+              const annotation = await annotationApi.get(dataId);
+              markDataAnnotated(dataId, annotation);
+            } else {
               await fetchSingleData(dataId);
             }
           } else {
