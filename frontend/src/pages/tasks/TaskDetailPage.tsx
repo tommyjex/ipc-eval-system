@@ -93,6 +93,31 @@ const normalizeResultDetail = (result: Partial<TaskResultDetail>): TaskResultDet
 });
 const getTaskResultPreviewUrl = (result: Pick<TaskResultDetail, 'data_id' | 'download_url' | 'file_type'>) =>
   buildEvaluationDataPreviewUrl(result.data_id);
+const getTaskResultDownloadUrl = (result: Pick<TaskResultDetail, 'download_url' | 'data_id' | 'file_type'>) =>
+  result.download_url || getTaskResultPreviewUrl(result);
+
+const copyTextWithFallback = async (text: string) => {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  textarea.style.pointerEvents = 'none';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  const copied = document.execCommand('copy');
+  document.body.removeChild(textarea);
+  if (!copied) {
+    throw new Error('复制失败');
+  }
+};
 
 const MultiSelectDropdown = <T extends string>({
   label,
@@ -353,6 +378,16 @@ export const TaskDetailPage: React.FC = () => {
   const pollingRef = useRef(false);
 
   const delay = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+  const handleCopyText = async (text: string, successMessage = '已复制到剪贴板') => {
+    try {
+      await copyTextWithFallback(text);
+      setSaveSuccess(successMessage);
+      window.setTimeout(() => setSaveSuccess(''), 2000);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '复制失败');
+    }
+  };
 
   useEffect(() => {
     if (!promptOptimizationLoading) {
@@ -911,7 +946,7 @@ export const TaskDetailPage: React.FC = () => {
               <div className="mb-2 flex justify-end">
                 <button
                   type="button"
-                  onClick={() => navigator.clipboard.writeText(text)}
+                  onClick={() => handleCopyText(text)}
                   className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
                 >
                   复制
@@ -1456,7 +1491,10 @@ export const TaskDetailPage: React.FC = () => {
                       </button>
                       <button
                         type="button"
-                        onClick={() => navigator.clipboard.writeText(promptOptimizationDraft || promptOptimizationResult.edited_prompt || promptOptimizationResult.optimized_prompt)}
+                        onClick={() => handleCopyText(
+                          promptOptimizationDraft || promptOptimizationResult.edited_prompt || promptOptimizationResult.optimized_prompt,
+                          '已复制当前提示词',
+                        )}
                         className="rounded border border-transparent px-3 py-2 text-sm text-blue-600 hover:bg-white hover:text-blue-800"
                       >
                         复制当前提示词
@@ -1846,7 +1884,20 @@ export const TaskDetailPage: React.FC = () => {
           <div className="bg-white rounded-lg shadow-lg max-w-4xl max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="p-4 border-b flex justify-between items-center">
               <h3 className="text-lg font-bold">{previewData.file_name}</h3>
-              <button onClick={closePreview} className="text-gray-500 hover:text-gray-700">✕</button>
+              <div className="flex items-center gap-3">
+                {isVideo(previewData.file_type) && (
+                  <a
+                    href={getTaskResultDownloadUrl(previewData)}
+                    download={previewData.file_name}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center rounded border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-100 hover:text-blue-700"
+                  >
+                    下载视频
+                  </a>
+                )}
+                <button onClick={closePreview} className="text-gray-500 hover:text-gray-700">✕</button>
+              </div>
             </div>
             <div className="p-4 flex items-center justify-center" style={{ maxHeight: '70vh' }}>
               {isVideo(previewData.file_type) ? (
