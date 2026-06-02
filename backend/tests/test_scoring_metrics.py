@@ -66,6 +66,33 @@ def test_compute_score_metrics_ignores_description_when_event_is_empty():
     assert metrics["empty_sample_passed"] is True
 
 
+def test_compute_score_metrics_uses_event_only_when_output_has_extra_schema_fields():
+    ground_truth = """
+    {
+      "event": ["猫走动", "猫吃东西", "猫喝水", "猫坐着"]
+    }
+    """
+    model_output = """
+    {
+      "object": ["猫"],
+      "action": ["走动", "吃东西", "喝水", "坐着"],
+      "event": ["猫走动", "猫吃东西", "猫喝水", "猫坐着"],
+      "description": "画面中有两只猫，一只灰白色的猫先在食盆处进食，随后另一只白灰色的猫走动到饮水机旁，坐着喝饮水机流出的水。",
+      "title": "猫咪走动进食喝水"
+    }
+    """
+
+    metrics = compute_score_metrics(ground_truth, model_output)
+
+    assert metrics["ground_truth_unit_count"] == 4
+    assert metrics["predicted_unit_count"] == 4
+    assert metrics["tp_count"] == 4
+    assert metrics["fp_count"] == 0
+    assert metrics["fn_count"] == 0
+    assert metrics["recall"] == 100.0
+    assert metrics["precision"] == 100.0
+
+
 def test_compute_score_metrics_for_text_fallback():
     metrics = compute_score_metrics("人员跌倒。车辆逆行。", "人员跌倒。")
 

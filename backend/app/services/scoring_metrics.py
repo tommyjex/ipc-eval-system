@@ -104,12 +104,19 @@ def _to_units_from_json_list(value: list[Any]) -> list[NormalizedUnit]:
     return units
 
 
+def _extract_event_items(value: dict[str, Any]) -> Optional[list[Any]]:
+    for field_name in ("event", "events"):
+        items = value.get(field_name)
+        if isinstance(items, list):
+            return items
+    return None
+
+
 def _to_units_from_json(value: Any) -> list[NormalizedUnit]:
     if isinstance(value, dict):
-        if "event" in value and isinstance(value["event"], list):
-            return _to_units_from_json_list(value["event"])
-        if "events" in value and isinstance(value["events"], list):
-            return _to_units_from_json_list(value["events"])
+        event_items = _extract_event_items(value)
+        if event_items is not None:
+            return _to_units_from_json_list(event_items)
         key, canonical, summary = _summarize_dict_unit(value)
         if not canonical:
             return []
@@ -161,24 +168,17 @@ def parse_scoring_input(text: str) -> ParsedScoringInput:
     if candidate:
         try:
             parsed = json.loads(candidate)
-            if isinstance(parsed, dict) and "event" in parsed and isinstance(parsed["event"], list):
-                units = _to_units_from_json_list(parsed["event"])
-                return ParsedScoringInput(
-                    units=units,
-                    parse_status="parsed",
-                    raw_text=raw_text,
-                    event_list_present=True,
-                    event_list_count=len(parsed["event"]),
-                )
-            if isinstance(parsed, dict) and "events" in parsed and isinstance(parsed["events"], list):
-                units = _to_units_from_json_list(parsed["events"])
-                return ParsedScoringInput(
-                    units=units,
-                    parse_status="parsed",
-                    raw_text=raw_text,
-                    event_list_present=True,
-                    event_list_count=len(parsed["events"]),
-                )
+            if isinstance(parsed, dict):
+                event_items = _extract_event_items(parsed)
+                if event_items is not None:
+                    units = _to_units_from_json_list(event_items)
+                    return ParsedScoringInput(
+                        units=units,
+                        parse_status="parsed",
+                        raw_text=raw_text,
+                        event_list_present=True,
+                        event_list_count=len(event_items),
+                    )
             if isinstance(parsed, list):
                 units = _to_units_from_json_list(parsed)
                 return ParsedScoringInput(
