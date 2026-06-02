@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { taskApi, datasetApi, promptTemplateApi, buildEvaluationDataPreviewUrl } from '../../api';
+import { taskApi, datasetApi, promptTemplateApi, buildEvaluationDataDownloadUrl, buildEvaluationDataPreviewUrl } from '../../api';
 import type { EvaluationTask, TaskResultDetail, TaskStatus, TaskScoringStatus, TaskResultStatus, DatasetScene, PromptTemplate, PromptOptimizationResponse, PromptOptimizationVersionItem } from '../../api';
 
 const getRecentPromptTemplateStorageKey = (scene: DatasetScene) => `recent-prompt-template:${scene}`;
@@ -94,7 +94,7 @@ const normalizeResultDetail = (result: Partial<TaskResultDetail>): TaskResultDet
 const getTaskResultPreviewUrl = (result: Pick<TaskResultDetail, 'data_id' | 'download_url' | 'file_type'>) =>
   buildEvaluationDataPreviewUrl(result.data_id);
 const getTaskResultDownloadUrl = (result: Pick<TaskResultDetail, 'download_url' | 'data_id' | 'file_type'>) =>
-  result.download_url || getTaskResultPreviewUrl(result);
+  buildEvaluationDataDownloadUrl(result.data_id);
 
 const copyTextWithFallback = async (text: string) => {
   if (navigator.clipboard?.writeText && window.isSecureContext) {

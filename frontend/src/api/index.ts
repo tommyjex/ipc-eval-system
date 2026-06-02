@@ -1,5 +1,6 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 export const buildEvaluationDataPreviewUrl = (dataId: number) => `${API_BASE_URL}/datasets/data/${dataId}/preview`;
+export const buildEvaluationDataDownloadUrl = (dataId: number) => `${API_BASE_URL}/datasets/data/${dataId}/download`;
 
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from typing import Optional
 import requests
+from urllib.parse import quote
 
 from app.core.database import get_db
 from app.core.config import get_settings
@@ -54,6 +55,28 @@ def _stream_remote_response(response: requests.Response):
         response.close()
 
 
+def _guess_media_type(file_type: str) -> str:
+    return {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "gif": "image/gif",
+        "bmp": "image/bmp",
+        "webp": "image/webp",
+        "mp4": "video/mp4",
+        "avi": "video/x-msvideo",
+        "mov": "video/quicktime",
+        "mkv": "video/x-matroska",
+        "flv": "video/x-flv",
+        "wmv": "video/x-ms-wmv",
+    }.get(file_type, "application/octet-stream")
+
+
+def _build_attachment_disposition(file_name: str) -> str:
+    safe_ascii_name = file_name.encode("ascii", errors="ignore").decode("ascii") or "download"
+    return f"attachment; filename={safe_ascii_name!r}; filename*=UTF-8''{quote(file_name)}"
+
+
 @router.get("/data/{data_id}/preview", summary="代理预览媒体")
 def proxy_data_preview(data_id: int, request: Request, db: Session = Depends(get_db)):
     data = db.query(EvaluationData).filter(EvaluationData.id == data_id).first()
@@ -86,20 +109,7 @@ def proxy_data_preview(data_id: int, request: Request, db: Session = Depends(get
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"对象预览代理失败: {exc}") from exc
 
-    media_type = upstream_response.headers.get("Content-Type") or {
-        "jpg": "image/jpeg",
-        "jpeg": "image/jpeg",
-        "png": "image/png",
-        "gif": "image/gif",
-        "bmp": "image/bmp",
-        "webp": "image/webp",
-        "mp4": "video/mp4",
-        "avi": "video/x-msvideo",
-        "mov": "video/quicktime",
-        "mkv": "video/x-matroska",
-        "flv": "video/x-flv",
-        "wmv": "video/x-ms-wmv",
-    }.get(file_type, "application/octet-stream")
+    media_type = upstream_response.headers.get("Content-Type") or _guess_media_type(file_type)
     headers = {
         "Cache-Control": "private, max-age=60",
         "Accept-Ranges": upstream_response.headers.get("Accept-Ranges", "bytes"),
@@ -118,6 +128,51 @@ def proxy_data_preview(data_id: int, request: Request, db: Session = Depends(get
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"对象预览代理失败: {exc}") from exc
+
+
+@router.get("/data/{data_id}/download", summary="代理下载媒体")
+def proxy_data_download(data_id: int, db: Session = Depends(get_db)):
+    data = db.query(EvaluationData).filter(EvaluationData.id == data_id).first()
+    if not data:
+        raise HTTPException(status_code=404, detail="评测数据不存在")
+
+    file_type = (data.file_type or "").lower()
+    if file_type not in ALL_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="当前文件类型不支持下载")
+
+    tos_client = get_tos_client()
+    download_url = tos_client.get_download_url(data.tos_key, public_endpoint=True)
+
+    try:
+        upstream_response = requests.get(
+            download_url,
+            stream=True,
+            timeout=120,
+        )
+        if upstream_response.status_code >= 400:
+            raise HTTPException(status_code=502, detail="对象下载代理失败")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"对象下载代理失败: {exc}") from exc
+
+    headers = {
+        "Cache-Control": "private, no-store",
+        "Content-Disposition": _build_attachment_disposition(data.file_name),
+    }
+    content_length = upstream_response.headers.get("Content-Length")
+    if content_length:
+        headers["Content-Length"] = content_length
+
+    try:
+        return StreamingResponse(
+            _stream_remote_response(upstream_response),
+            status_code=upstream_response.status_code,
+            media_type=upstream_response.headers.get("Content-Type") or _guess_media_type(file_type),
+            headers=headers,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"对象下载代理失败: {exc}") from exc
 
 
 @router.post(
