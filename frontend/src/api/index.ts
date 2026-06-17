@@ -191,6 +191,79 @@ export interface EvaluationDataListResponse {
   total: number;
 }
 
+export type JsonObject = Record<string, unknown>;
+
+export interface VectorRetrievalEvaluateRequest {
+  dataset_id?: number;
+  collection_name?: string;
+  index_name?: string;
+  query?: string;
+  top_k: number;
+  rerank_model: 'm3-v2-rerank' | 'base-multilingual-rerank';
+  scalar_filter?: JsonObject;
+  filter_tags?: string[];
+  min_score?: number;
+  step_delta_threshold?: number;
+}
+
+export interface VectorCollection {
+  collection_name: string;
+  resource_id: string | null;
+  description: string | null;
+  data_count: number | null;
+  index_names: string[];
+}
+
+export interface VectorIndex {
+  collection_name: string;
+  index_name: string;
+  resource_id: string | null;
+  description: string | null;
+  status: string | null;
+  project_name: string | null;
+}
+
+export interface VectorRetrievalQuery {
+  data_id: number | null;
+  file_name: string;
+  file_type: string;
+  tos_key: string;
+  tos_bucket: string;
+  object_url: string;
+  multimodal_input: JsonObject;
+}
+
+export interface VectorRetrievalResultItem {
+  object_id: string;
+  object_name: string;
+  object_url: string | null;
+  metadata: JsonObject;
+  search_score: number | null;
+  rerank_score: number | null;
+  rank: number | null;
+  rerank_rank: number | null;
+  kept: boolean;
+  truncate_reason: string | null;
+}
+
+export interface VectorRetrievalEvaluateResponse {
+  dataset_id: number | null;
+  collection_name: string | null;
+  index_name: string | null;
+  query: VectorRetrievalQuery;
+  top_k: number;
+  rerank_model: string;
+  scalar_filter: JsonObject | null;
+  post_process_ops: JsonObject[] | null;
+  min_score: number | null;
+  step_delta_threshold: number | null;
+  search_results: VectorRetrievalResultItem[];
+  rerank_results: VectorRetrievalResultItem[];
+  final_results: VectorRetrievalResultItem[];
+  truncated: boolean;
+  truncate_reason: string | null;
+}
+
 export interface PresignedUrlResponse {
   upload_url: string;
   object_key: string;
@@ -257,6 +330,15 @@ export const evaluationDataApi = {
     api.get<TOSFileListResponse>(`/datasets/${datasetId}/tos-files`, { prefix }),
   importFromTOS: (datasetId: number, keys: string[]) =>
     api.post<EvaluationData[]>(`/datasets/${datasetId}/import-v2`, { keys }),
+};
+
+export const vectorRetrievalApi = {
+  listCollections: (params?: { keyword?: string }) =>
+    api.get<VectorCollection[]>('/vector-retrieval/collections', params),
+  listIndexes: (params: { collection_name: string }) =>
+    api.get<VectorIndex[]>('/vector-retrieval/indexes', params),
+  evaluate: (data: VectorRetrievalEvaluateRequest) =>
+    api.post<VectorRetrievalEvaluateResponse>('/vector-retrieval/evaluate', data),
 };
 
 export const annotationApi = {

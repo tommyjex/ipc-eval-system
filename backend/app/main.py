@@ -2,7 +2,18 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.database import init_db
-from app.api import auth, health, datasets, evaluation_data, annotations, tasks, scoring_templates, prompt_templates, users
+from app.api import (
+    annotations,
+    auth,
+    datasets,
+    evaluation_data,
+    health,
+    prompt_templates,
+    scoring_templates,
+    tasks,
+    users,
+    vector_retrieval,
+)
 
 settings = get_settings()
 
@@ -31,6 +42,7 @@ app.include_router(tasks.router, prefix="/api", tags=["评测任务"], dependenc
 app.include_router(scoring_templates.router, prefix="/api", tags=["评分标准模板"], dependencies=protected_dependencies)
 app.include_router(prompt_templates.router, prefix="/api", tags=["任务 Prompt 模板"], dependencies=protected_dependencies)
 app.include_router(users.router, prefix="/api", tags=["用户管理"], dependencies=protected_dependencies)
+app.include_router(vector_retrieval.router, prefix="/api", tags=["向量检索评估"], dependencies=protected_dependencies)
 
 
 @app.on_event("startup")

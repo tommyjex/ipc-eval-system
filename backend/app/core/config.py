@@ -1,5 +1,6 @@
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -11,14 +12,14 @@ class Settings(BaseSettings):
     admin_username: str = "admin"
     admin_password: str
 
-    tos_access_key: str 
-    tos_secret_key: str 
+    tos_access_key: str
+    tos_secret_key: str
     tos_endpoint: str = "tos-cn-beijing.volces.com"
     tos_public_endpoint: str = "tos-cn-beijing.volces.com"
     tos_region: str = "cn-beijing"
     tos_bucket: str = "xujianhua-utils"
 
-    ark_api_key: str 
+    ark_api_key: str
     ark_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
     ark_model: str = "ep-20260215001006-86n7g"
     ark_timeout: int = 20
@@ -31,6 +32,22 @@ class Settings(BaseSettings):
     task_inference_batch_size: int = 50
     task_scoring_batch_size: int = 200
     task_single_timeout_seconds: int = 120
+
+    vikingdb_host: str | None = None
+    vikingdb_control_host: str | None = None
+    vikingdb_region: str | None = None
+    vikingdb_collection: str | None = None
+    vikingdb_index: str | None = None
+    vikingdb_access_key: str | None = None
+    vikingdb_secret_key: str | None = None
+    vikingdb_knowledge_host: str = "api-knowledgebase.mlp.ap-southeast-1.bytepluses.com"
+
+    rerank_model: str = "m3-v2-rerank"
+    rerank_instruction: str | None = None
+    rerank_endpoint_id: str | None = None
+    rerank_timeout: int = 30
+    vector_retrieval_rerank_min_score: float | None = None
+    vector_retrieval_step_delta_threshold: float | None = None
 
     db_host: str = "mysqlf4d4d1585fb1.rds.ivolces.com"
     db_port: int = 3306

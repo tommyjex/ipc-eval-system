@@ -9,6 +9,7 @@ python-multipart>=0.0.6
 Pillow>=10.0.0
 tos>=2.7.0
 volcengine-python-sdk[ark]>=1.0.0
+vikingdb-python-sdk>=0.0.8
 aiomysql>=0.2.0
 requests>=2.31.0
 imageio>=2.37.0

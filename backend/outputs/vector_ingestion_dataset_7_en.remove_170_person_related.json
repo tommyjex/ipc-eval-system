@@ -1,0 +1,1209 @@
+[
+  {
+    "data_id": 2,
+    "file_name": "01-摄像头光线自变.gif",
+    "file_type": "gif",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/01-摄像头光线自变.gif"
+    },
+    "annotation_id": 31,
+    "original_annotation": {
+      "description": "户外空地旁的道路边停着一辆灰色汽车，周边是菜地和民居",
+      "title": "乡村小景哦",
+      "event": [
+        "汽车"
+      ]
+    },
+    "english_annotation": {
+      "description": "A gray car is parked by the road next to an open outdoor area, surrounded by vegetable plots and residential houses.",
+      "title": "A little rural scene, oh!",
+      "event": [
+        "car"
+      ]
+    }
+  },
+  {
+    "data_id": 5,
+    "file_name": "03-有人滚轮胎经过.gif",
+    "file_type": "gif",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/03-有人滚轮胎经过.gif"
+    },
+    "annotation_id": 28,
+    "original_annotation": {
+      "description": "户外空水泥场地，旁有绿植，远处停有一辆汽车",
+      "title": "空场地日常",
+      "event": [
+        "汽车"
+      ]
+    },
+    "english_annotation": {
+      "description": "Outdoor empty concrete site, with green plants next to it, and a car parked in the distance.",
+      "title": "Empty Venue Daily Operations",
+      "event": [
+        "car"
+      ]
+    }
+  },
+  {
+    "data_id": 8,
+    "file_name": "04-黑车经过.gif",
+    "file_type": "gif",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/04-黑车经过.gif"
+    },
+    "annotation_id": 25,
+    "original_annotation": {
+      "description": "空地上有几辆黑色汽车行驶移动，周边长有绿植",
+      "title": "车辆经过空地",
+      "event": [
+        "汽车"
+      ]
+    },
+    "english_annotation": {
+      "description": "Several black cars are driving and moving on the open ground, with green plants growing around it.",
+      "title": "Vehicles pass through the open space.",
+      "event": [
+        "car"
+      ]
+    }
+  },
+  {
+    "data_id": 9,
+    "file_name": "05-三轮车经过.gif",
+    "file_type": "gif",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/05-三轮车经过.gif"
+    },
+    "annotation_id": 24,
+    "original_annotation": {
+      "description": "户外空场旁道路上，一辆深色汽车停放，三轮车驶过",
+      "title": "户外小路日常",
+      "event": [
+        "汽车"
+      ]
+    },
+    "english_annotation": {
+      "description": "On the road next to the outdoor open space, a dark-colored car is parked, and a tricycle is passing by.",
+      "title": "Daily Life on Outdoor Trails",
+      "event": [
+        "car"
+      ]
+    }
+  },
+  {
+    "data_id": 10,
+    "file_name": "05-爷爷端盘子走过.gif",
+    "file_type": "gif",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/05-爷爷端盘子走过.gif"
+    },
+    "annotation_id": 23,
+    "original_annotation": {
+      "description": "一名老年男子拿碗在屋内行走，抬手摸头",
+      "title": "大爷室内行走",
+      "event": [
+        "有人出现",
+        "男人出现",
+        "老人出现"
+      ]
+    },
+    "english_annotation": {
+      "description": "An elderly man is walking inside the house holding a bowl, and raises his hand to touch his head.",
+      "title": "An elderly man is walking indoors.",
+      "event": [
+        "Someone is here.",
+        "The man appears.",
+        "The old man appears."
+      ]
+    }
+  },
+  {
+    "data_id": 11,
+    "file_name": "06-夜晚啥都没有.gif",
+    "file_type": "gif",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/06-夜晚啥都没有.gif"
+    },
+    "annotation_id": 22,
+    "original_annotation": {
+      "description": "监控画面为夜间室外场景，无人物、动物、交通工具出现",
+      "title": "空无一人的夜景",
+      "event": []
+    },
+    "english_annotation": {
+      "description": "The surveillance footage shows a nighttime outdoor scene, with no people, animals or means of transportation present.",
+      "title": "An empty night scene",
+      "event": []
+    }
+  },
+  {
+    "data_id": 13,
+    "file_name": "07-保安路过楼梯口.gif",
+    "file_type": "gif",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/07-保安路过楼梯口.gif"
+    },
+    "annotation_id": 20,
+    "original_annotation": {
+      "description": "穿制服戴帽子的保安扶楼梯下楼梯",
+      "title": "保安下楼梯啦",
+      "event": [
+        "有人出现",
+        "男人出现",
+        "戴帽子的人",
+        "穿黑色衣服的人",
+        "保安"
+      ]
+    },
+    "english_annotation": {
+      "description": "The security guard in uniform and wearing a hat holds onto the handrail as he goes down the stairs.",
+      "title": "The security guard is going down the stairs!",
+      "event": [
+        "Someone showed up.",
+        "The man appears.",
+        "the person wearing a hat",
+        "the person in black clothes",
+        "security guard"
+      ]
+    }
+  },
+  {
+    "data_id": 394,
+    "file_name": "1-白发红衣奶奶从院子台阶跌倒.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/1-白发红衣奶奶从院子台阶跌倒.mp4"
+    },
+    "annotation_id": 138,
+    "original_annotation": {
+      "description": "老人端簸箕下台阶时摔倒在地，随后坐起",
+      "title": "老人不慎摔倒",
+      "event": [
+        "老人摔倒",
+        "老人出现",
+        "有人出现"
+      ]
+    },
+    "english_annotation": {
+      "description": "The elderly person fell to the ground when carrying a dustpan down the steps, and then sat up.",
+      "title": "The elderly person fell down accidentally",
+      "event": [
+        "An elderly person falls down",
+        "The old man appears.",
+        "Someone has appeared."
+      ]
+    }
+  },
+  {
+    "data_id": 414,
+    "file_name": "2-黑衣外卖黄帽.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/2-黑衣外卖黄帽.mp4"
+    },
+    "annotation_id": 117,
+    "original_annotation": {
+      "description": "戴黄头盔穿黑衣的外卖员拎餐包在电梯前看手机",
+      "title": "小哥等电梯哦",
+      "event": [
+        "有人出现",
+        "看手机",
+        "穿黑色衣服的人",
+        "戴头盔的人",
+        "外卖员"
+      ]
+    },
+    "english_annotation": {
+      "description": "The delivery worker wearing a yellow helmet and black clothes is carrying a meal bag and looking at his phone in front of the elevator.",
+      "title": "Hey buddy, waiting for the elevator?",
+      "event": [
+        "Someone has appeared.",
+        "look at the phone",
+        "the person in black clothes",
+        "the person wearing a helmet",
+        "delivery worker"
+      ]
+    }
+  },
+  {
+    "data_id": 432,
+    "file_name": "3-绿衣外卖员电梯内看手机.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/3-绿衣外卖员电梯内看手机.mp4"
+    },
+    "annotation_id": 85,
+    "original_annotation": {
+      "description": "戴头盔男子在电梯内看手机，另一男子从旁走过，电梯门关闭",
+      "title": "电梯门关啦",
+      "event": [
+        "有人出现",
+        "看手机",
+        "穿黑色衣服的人",
+        "戴头盔的人",
+        "外卖员",
+        "男人出现",
+        "戴帽子的人"
+      ]
+    },
+    "english_annotation": {
+      "description": "A man wearing a helmet was looking at his phone in the elevator, another man walked past him, and the elevator doors closed.",
+      "title": "The elevator doors are closing.",
+      "event": [
+        "Someone has appeared.",
+        "look at one's phone",
+        "The person in black clothes",
+        "Person wearing a helmet",
+        "delivery worker",
+        "The man appeared.",
+        "the person wearing a hat"
+      ]
+    }
+  },
+  {
+    "data_id": 439,
+    "file_name": "5-黑色皮衣外卖员.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/5-黑色皮衣外卖员.mp4"
+    },
+    "annotation_id": 92,
+    "original_annotation": {
+      "description": "男子戴黄头盔，穿黑色外套提袋站在电梯前",
+      "title": "等电梯日常",
+      "event": [
+        "有人出现",
+        "戴头盔的人",
+        "穿黑色衣服的人",
+        "外卖员"
+      ]
+    },
+    "english_annotation": {
+      "description": "The man, wearing a yellow helmet and a black coat and holding a bag, is standing in front of the elevator.",
+      "title": "Daily routine of waiting for the elevator",
+      "event": [
+        "Someone has appeared.",
+        "the person wearing a helmet",
+        "the person in black clothes",
+        "food delivery worker"
+      ]
+    }
+  },
+  {
+    "data_id": 443,
+    "file_name": "65-楼梯间-116-长发黑衣拎着袋子与纸箱.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/65-楼梯间-116-长发黑衣拎着袋子与纸箱.mp4"
+    },
+    "annotation_id": 96,
+    "original_annotation": {
+      "description": "一名穿黑色衣服的女士提着东西上楼梯",
+      "title": "女子上楼",
+      "event": [
+        "有人出现",
+        "女人出现",
+        "穿黑色衣服的人"
+      ]
+    },
+    "english_annotation": {
+      "description": "A lady dressed in black is carrying things as she walks up the stairs.",
+      "title": "The woman goes upstairs.",
+      "event": [
+        "Someone has appeared.",
+        "The woman appears.",
+        "the person in black clothes"
+      ]
+    }
+  },
+  {
+    "data_id": 451,
+    "file_name": "农村院子外有卡车经过.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/农村院子外有卡车经过.mp4"
+    },
+    "annotation_id": 104,
+    "original_annotation": {
+      "description": "乡村空地上停着一辆白色轿车，车辆在远处道路驶过",
+      "title": "乡村日常记录",
+      "event": [
+        "汽车"
+      ]
+    },
+    "english_annotation": {
+      "description": "A white sedan is parked on the open space in the countryside, and vehicles are driving past on the road in the distance.",
+      "title": "Rural Daily Records",
+      "event": [
+        "car"
+      ]
+    }
+  },
+  {
+    "data_id": 457,
+    "file_name": "客厅猫架猫走动.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/客厅猫架猫走动.mp4"
+    },
+    "annotation_id": 152,
+    "original_annotation": {
+      "description": "一只小猫从沙发旁跑过",
+      "title": "小猫乱跑超可爱",
+      "event": [
+        "宠物出现"
+      ]
+    },
+    "english_annotation": {
+      "description": "A little kitten ran past the sofa.",
+      "title": "The little kitten running around aimlessly is super cute.",
+      "event": [
+        "Pets appear"
+      ]
+    }
+  },
+  {
+    "data_id": 458,
+    "file_name": "客厅猫爬架场景沙发上有书包.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/客厅猫爬架场景沙发上有书包.mp4"
+    },
+    "annotation_id": 151,
+    "original_annotation": {
+      "description": "穿白黄拼接睡衣的人在室内走动后离开",
+      "title": "在家收拾猫爬架",
+      "event": [
+        "有人出现",
+        "穿白色衣服的人"
+      ]
+    },
+    "english_annotation": {
+      "description": "The person wearing a white and yellow color-blocked pajamas walks around indoors and then leaves.",
+      "title": "I'm tidying up the cat tree at home.",
+      "event": [
+        "Someone has appeared.",
+        "the person in white clothes"
+      ]
+    }
+  },
+  {
+    "data_id": 459,
+    "file_name": "客厅的猫走近摄像头.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/客厅的猫走近摄像头.mp4"
+    },
+    "annotation_id": 153,
+    "original_annotation": {
+      "description": "一只虎斑猫在室内走动，凑近镜头",
+      "title": "小猫咪好奇探头",
+      "event": [
+        "宠物出现"
+      ]
+    },
+    "english_annotation": {
+      "description": "A tabby cat is walking around indoors and approaching the camera.",
+      "title": "The little kitten pokes its head out curiously.",
+      "event": [
+        "Pets appear"
+      ]
+    }
+  },
+  {
+    "data_id": 465,
+    "file_name": "小狗试图打开狗粮袋子吃粮.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/小狗试图打开狗粮袋子吃粮.mp4"
+    },
+    "annotation_id": 77,
+    "original_annotation": {
+      "description": "浅灰色小狗在室内走动，凑近镜头并扒碰拍摄设备",
+      "title": "修狗也太可爱啦",
+      "event": [
+        "宠物出现"
+      ]
+    },
+    "english_annotation": {
+      "description": "A light gray puppy is walking around indoors, approaching the camera and pawing at the filming equipment.",
+      "title": "The little dog is so cute!",
+      "event": [
+        "A pet appears"
+      ]
+    }
+  },
+  {
+    "data_id": 467,
+    "file_name": "晚上猫吃食物.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/晚上猫吃食物.mp4"
+    },
+    "annotation_id": 75,
+    "original_annotation": {
+      "description": "一只浅色猫咪在室内地上吃食物",
+      "title": "小猫咪干饭啦",
+      "event": [
+        "宠物出现"
+      ]
+    },
+    "english_annotation": {
+      "description": "A light-colored cat is eating food on the floor indoors.",
+      "title": "Kitty, it's time to eat!",
+      "event": [
+        "A pet appears"
+      ]
+    }
+  },
+  {
+    "data_id": 468,
+    "file_name": "晚上院外行驶的黑色汽车3.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/晚上院外行驶的黑色汽车3.mp4"
+    },
+    "annotation_id": 74,
+    "original_annotation": {
+      "description": "夜晚有两辆汽车行驶过路面，路面有开裂痕迹",
+      "title": "夜间车辆驶过",
+      "event": [
+        "汽车"
+      ]
+    },
+    "english_annotation": {
+      "description": "At night, two cars drove past the road surface, which has cracks on it.",
+      "title": "Vehicles pass by at night",
+      "event": [
+        "car"
+      ]
+    }
+  },
+  {
+    "data_id": 478,
+    "file_name": "楼梯间-116-长发黑衣拎着袋子与纸箱.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/楼梯间-116-长发黑衣拎着袋子与纸箱.mp4"
+    },
+    "annotation_id": 64,
+    "original_annotation": {
+      "description": "穿黑衣的长发女子拎着物品走上楼梯离开",
+      "title": "女子走楼梯上楼",
+      "event": [
+        "有人出现",
+        "女人出现",
+        "穿黑色衣服的人"
+      ]
+    },
+    "english_annotation": {
+      "description": "The long-haired woman in black, carrying her belongings, walked up the stairs and left.",
+      "title": "The woman walks up the stairs to go upstairs.",
+      "event": [
+        "Someone has appeared.",
+        "A woman appears.",
+        "the person in black clothes"
+      ]
+    }
+  },
+  {
+    "data_id": 484,
+    "file_name": "猫-39-猫跳到沙发上.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/猫-39-猫跳到沙发上.mp4"
+    },
+    "annotation_id": 58,
+    "original_annotation": {
+      "description": "一只灰白相间的猫在室内跑过，躲到沙发旁",
+      "title": "猫咪跑酷啦",
+      "event": [
+        "宠物出现"
+      ]
+    },
+    "english_annotation": {
+      "description": "A gray and white cat runs across the room and hides next to the sofa.",
+      "title": "The cats are doing parkour!",
+      "event": [
+        "Pets appear"
+      ]
+    }
+  },
+  {
+    "data_id": 485,
+    "file_name": "猫-42-花猫懒洋洋走过.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/猫-42-花猫懒洋洋走过.mp4"
+    },
+    "annotation_id": 57,
+    "original_annotation": {
+      "description": "灰白毛色的猫跑入画面，随后跑出画面",
+      "title": "小猫咪乱跑呀",
+      "event": [
+        "宠物出现"
+      ]
+    },
+    "english_annotation": {
+      "description": "A gray and white cat runs into the frame, then runs out of the frame.",
+      "title": "The little kitten is running around everywhere.",
+      "event": [
+        "Pets appear"
+      ]
+    }
+  },
+  {
+    "data_id": 486,
+    "file_name": "猫-43-花猫背对着走过.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/猫-43-花猫背对着走过.mp4"
+    },
+    "annotation_id": 56,
+    "original_annotation": {
+      "description": "灰白毛色宠物在房间地面走动后离开",
+      "title": "猫猫溜达好可爱",
+      "event": [
+        "宠物出现"
+      ]
+    },
+    "english_annotation": {
+      "description": "The gray and white furred pet walks around on the floor of the room and then leaves.",
+      "title": "The wandering cat is so cute.",
+      "event": [
+        "Pets appear"
+      ]
+    }
+  },
+  {
+    "data_id": 495,
+    "file_name": "院外有车经过1.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/院外有车经过1.mp4"
+    },
+    "annotation_id": 47,
+    "original_annotation": {
+      "description": "庭院空地，有汽车从左上角道路驶过",
+      "title": "庭院日常",
+      "event": [
+        "汽车"
+      ]
+    },
+    "english_annotation": {
+      "description": "There is open space in the courtyard, and a car is driving past the road in the upper left corner.",
+      "title": "Daily Courtyard Life",
+      "event": [
+        "car"
+      ]
+    }
+  },
+  {
+    "data_id": 497,
+    "file_name": "院外红色轿车经过4.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/院外红色轿车经过4.mp4"
+    },
+    "annotation_id": 45,
+    "original_annotation": {
+      "description": "红色汽车行驶经过，后有1人在车旁。",
+      "title": "车开过啦",
+      "event": [
+        "有人出现",
+        "汽车",
+        "宠物出现"
+      ]
+    },
+    "english_annotation": {
+      "description": "A red car drove by, with one person beside it behind.",
+      "title": "The bus has gone past!",
+      "event": [
+        "Someone has appeared.",
+        "car",
+        "Pets appear"
+      ]
+    }
+  },
+  {
+    "data_id": 500,
+    "file_name": "院子外马路边有多辆车经过.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/院子外马路边有多辆车经过.mp4"
+    },
+    "annotation_id": 42,
+    "original_annotation": {
+      "description": "道路上有车辆、骑电瓶车的人，有穿白衣的人在步行",
+      "title": "户外街景随拍",
+      "event": [
+        "有人出现",
+        "汽车",
+        "穿白色衣服的人"
+      ]
+    },
+    "english_annotation": {
+      "description": "On the road, there are vehicles, people riding electric scooters, and people dressed in white walking.",
+      "title": "Casual snapshots of outdoor street scenes",
+      "event": [
+        "Someone has appeared.",
+        "car",
+        "the person in white clothes"
+      ]
+    }
+  },
+  {
+    "data_id": 503,
+    "file_name": "院子红色盆子.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/院子红色盆子.mp4"
+    },
+    "annotation_id": 39,
+    "original_annotation": {
+      "description": "一处院落空场地，一辆白色汽车从旁路过",
+      "title": "小院日常记录",
+      "event": [
+        "汽车"
+      ]
+    },
+    "english_annotation": {
+      "description": "An empty lot in a courtyard, with a white car passing by.",
+      "title": "Daily Records of the Small Courtyard",
+      "event": [
+        "car"
+      ]
+    }
+  },
+  {
+    "data_id": 504,
+    "file_name": "院子里有车开车.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/院子里有车开车.mp4"
+    },
+    "annotation_id": 38,
+    "original_annotation": {
+      "description": "一辆棕色汽车行驶后驶离，白车停在路边，无人物出现",
+      "title": "棕色车开走啦",
+      "event": [
+        "汽车"
+      ]
+    },
+    "english_annotation": {
+      "description": "A brown car drives off after traveling, and the white car is parked by the roadside. No person appears.",
+      "title": "The brown car has driven away.",
+      "event": [
+        "car"
+      ]
+    }
+  },
+  {
+    "data_id": 505,
+    "file_name": "雨天院外行驶的黑色SUV2.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/雨天院外行驶的黑色SUV2.mp4"
+    },
+    "annotation_id": 37,
+    "original_annotation": {
+      "description": "一辆深色皮卡车行驶经过，路边停有灰色轿车",
+      "title": "皮卡车路过啦",
+      "event": [
+        "汽车"
+      ]
+    },
+    "english_annotation": {
+      "description": "A dark-colored pickup truck drove past, and a gray sedan was parked on the side of the road.",
+      "title": "The pickup truck is passing by!",
+      "event": [
+        "car"
+      ]
+    }
+  },
+  {
+    "data_id": 506,
+    "file_name": "雨天院外行驶的黑色轿车1.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/雨天院外行驶的黑色轿车1.mp4"
+    },
+    "annotation_id": 36,
+    "original_annotation": {
+      "description": "两辆黑色汽车先后行驶到灰色轿车旁停下",
+      "title": "汽车陆续停放",
+      "event": [
+        "汽车"
+      ]
+    },
+    "english_annotation": {
+      "description": "Two black cars drove up to the gray sedan one after another and stopped.",
+      "title": "Cars are parked one after another.",
+      "event": [
+        "car"
+      ]
+    }
+  },
+  {
+    "data_id": 524,
+    "file_name": "夜间小巷车辆停放监控记录.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/night_view/夜间小巷车辆停放监控记录.mp4"
+    },
+    "annotation_id": 180,
+    "original_annotation": {
+      "description": "夜晚的小巷路边停放着几辆汽车",
+      "title": "夜晚小巷实录",
+      "event": [
+        "汽车"
+      ]
+    },
+    "english_annotation": {
+      "description": "Several cars are parked along the side of the alley at night.",
+      "title": "Real-life Record of the Alley at Night",
+      "event": [
+        "car"
+      ]
+    }
+  },
+  {
+    "data_id": 528,
+    "file_name": "夜间民宅外有移动光源掠过.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/night_view/夜间民宅外有移动光源掠过.mp4"
+    },
+    "annotation_id": 177,
+    "original_annotation": {
+      "description": "夜间房屋前有发光物体移动，无其他人物动物交通工具",
+      "title": "奇怪的亮光哦",
+      "event": []
+    },
+    "english_annotation": {
+      "description": "A luminous object moves in front of the house at night, and there are no other people, animals or means of transport.",
+      "title": "That's a strange bright light.",
+      "event": []
+    }
+  },
+  {
+    "data_id": 531,
+    "file_name": "夜间私宅院落监控记录.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/night_view/夜间私宅院落监控记录.mp4"
+    },
+    "annotation_id": 175,
+    "original_annotation": {
+      "description": "夜间监控下的空旷庭院，墙边停放着两辆非机动车",
+      "title": "安静的雨夜庭院",
+      "event": []
+    },
+    "english_annotation": {
+      "description": "An empty courtyard under night surveillance, with two non-motorized vehicles parked by the wall.",
+      "title": "A quiet courtyard on a rainy night",
+      "event": []
+    }
+  },
+  {
+    "data_id": 537,
+    "file_name": "居民家中夜间出现移动物体.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/night_view/居民家中夜间出现移动物体.mp4"
+    },
+    "annotation_id": 169,
+    "original_annotation": {
+      "description": "客厅监控画面，有光斑移动，无清晰人物动物",
+      "title": "监控画面一览",
+      "event": []
+    },
+    "english_annotation": {
+      "description": "Living room surveillance footage: there are moving light spots, and no clear images of people or animals.",
+      "title": "Overview of Monitoring Screens",
+      "event": []
+    }
+  },
+  {
+    "data_id": 539,
+    "file_name": "民宅夜间出现移动光斑.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/night_view/民宅夜间出现移动光斑.mp4"
+    },
+    "annotation_id": 166,
+    "original_annotation": {
+      "description": "监控画面显示房屋内景，出现光斑，无其他生物活动",
+      "title": "奇怪的光斑",
+      "event": []
+    },
+    "english_annotation": {
+      "description": "The surveillance footage shows the interior of the house, with light spots appearing and no other biological activity detected.",
+      "title": "Strange light spots",
+      "event": []
+    }
+  },
+  {
+    "data_id": 540,
+    "file_name": "深夜不明发光物飞入民居.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/night_view/深夜不明发光物飞入民居.mp4"
+    },
+    "annotation_id": 163,
+    "original_annotation": {
+      "description": "监控画面中出现亮光移动，旁有黑色铁门，停着一辆汽车",
+      "title": "奇怪的亮光啊",
+      "event": [
+        "汽车"
+      ]
+    },
+    "english_annotation": {
+      "description": "A moving bright light appears in the surveillance footage, with a black iron gate nearby and a car parked next to it.",
+      "title": "What a strange glow!",
+      "event": [
+        "car"
+      ]
+    }
+  },
+  {
+    "data_id": 544,
+    "file_name": "深夜车辆驶入沉香园.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/night_view/深夜车辆驶入沉香园.mp4"
+    },
+    "annotation_id": 161,
+    "original_annotation": {
+      "description": "一辆车驶入监控下的户外土路区域。",
+      "title": "车晚上进小路啦",
+      "event": [
+        "汽车"
+      ]
+    },
+    "english_annotation": {
+      "description": "A vehicle drives into the outdoor dirt road area under surveillance.",
+      "title": "The car got onto the small path at night.",
+      "event": [
+        "car"
+      ]
+    }
+  },
+  {
+    "data_id": 545,
+    "file_name": "深夜院中小狗活动监控.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/night_view/深夜院中小狗活动监控.mp4"
+    },
+    "annotation_id": 160,
+    "original_annotation": {
+      "description": "夜晚门前有白色动物",
+      "title": "大门口有宠物出现",
+      "event": [
+        "宠物出现"
+      ]
+    },
+    "english_annotation": {
+      "description": "There is a white animal in front of the door at night.",
+      "title": "A pet has appeared at the main entrance.",
+      "event": [
+        "Pets appear"
+      ]
+    }
+  },
+  {
+    "data_id": 582,
+    "file_name": "女子带孩童先后离开客厅.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/children/女子带孩童先后离开客厅.mp4"
+    },
+    "annotation_id": 250,
+    "original_annotation": {
+      "description": "穿红衣的女人与穿白衣的小孩在室内跑动后离开",
+      "title": "屋里俩人行踪",
+      "event": [
+        "有人出现",
+        "穿红色衣服的人",
+        "穿白色衣服的人",
+        "小孩出现",
+        "小孩在奔跑",
+        "女人出现"
+      ]
+    },
+    "english_annotation": {
+      "description": "The woman in red and the child in white ran around indoors before leaving.",
+      "title": "Whereabouts of the two people in the room",
+      "event": [
+        "Someone has appeared.",
+        "The person in red clothes",
+        "the person in white clothes",
+        "The child appears.",
+        "A child is running.",
+        "A woman appears."
+      ]
+    }
+  },
+  {
+    "data_id": 589,
+    "file_name": "小男孩居家独坐客厅看电视.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/children/小男孩居家独坐客厅看电视.mp4"
+    },
+    "annotation_id": 243,
+    "original_annotation": {
+      "description": "小男孩独自在客厅沙发上坐着看电视",
+      "title": "小宝贝太乖啦",
+      "event": [
+        "有人出现",
+        "小孩出现"
+      ]
+    },
+    "english_annotation": {
+      "description": "The little boy was sitting on the living room sofa watching TV all alone.",
+      "title": "Little baby is so well-behaved!",
+      "event": [
+        "Someone showed up.",
+        "A child appears."
+      ]
+    }
+  },
+  {
+    "data_id": 593,
+    "file_name": "幼童爬滑梯坠落家长救助.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/children/幼童爬滑梯坠落家长救助.mp4"
+    },
+    "annotation_id": 239,
+    "original_annotation": {
+      "description": "穿红白衣服的小孩从滑梯摔下，穿粉色衣服的女子照看",
+      "title": "萌娃玩耍要小心",
+      "event": [
+        "小孩摔倒",
+        "小孩出现",
+        "女人出现",
+        "有人出现",
+        "穿红色衣服的人"
+      ]
+    },
+    "english_annotation": {
+      "description": "A child wearing red and white clothes fell off the slide, and a woman in pink clothes is taking care of him.",
+      "title": "Little kids need to be careful when playing.",
+      "event": [
+        "The child fell down.",
+        "A child appears.",
+        "A woman appears.",
+        "Someone has appeared.",
+        "the person in red clothes"
+      ]
+    }
+  },
+  {
+    "data_id": 595,
+    "file_name": "男孩居家坐在桌前学习.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/children/男孩居家坐在桌前学习.mp4"
+    },
+    "annotation_id": 237,
+    "original_annotation": {
+      "description": "穿黑上衣红裤子的男孩坐在书桌前翻页伏案",
+      "title": "小男孩写作业啦",
+      "event": [
+        "有人出现",
+        "穿黑色衣服的人"
+      ]
+    },
+    "english_annotation": {
+      "description": "The boy wearing a black top and red pants is sitting at the desk, turning pages and bending over his work.",
+      "title": "Little boy, it's time to do your homework.",
+      "event": [
+        "Someone has appeared.",
+        "the person in black clothes"
+      ]
+    }
+  },
+  {
+    "data_id": 597,
+    "file_name": "夜间民宅旁货车驶离现场.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/electric_scooter/夜间民宅旁货车驶离现场.mp4"
+    },
+    "annotation_id": 234,
+    "original_annotation": {
+      "description": "夜间户外场地，白色货车移动后停放，有黄狗跑动",
+      "title": "白货车夜间移动",
+      "event": [
+        "汽车"
+      ]
+    },
+    "english_annotation": {
+      "description": "Outdoor venue at night, the white van moves and then parks, and a yellow dog is running around.",
+      "title": "White van moves at night",
+      "event": [
+        "car"
+      ]
+    }
+  },
+  {
+    "data_id": 599,
+    "file_name": "孩童在路边玩耍车辆驶过.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/electric_scooter/孩童在路边玩耍车辆驶过.mp4"
+    },
+    "annotation_id": 233,
+    "original_annotation": {
+      "description": "两个小孩在民房门口，一男子骑电动车过弯道",
+      "title": "乡间日常记录",
+      "event": [
+        "小孩出现",
+        "有人出现",
+        "骑电动车戴头盔的人",
+        "在门口玩",
+        "穿白色衣服的人",
+        "穿黑色衣服的人",
+        "戴头盔的人",
+        "汽车"
+      ]
+    },
+    "english_annotation": {
+      "description": "Two children are at the entrance of a residential house, and a man is riding an electric scooter through a curve.",
+      "title": "Daily Records of Country Life",
+      "event": [
+        "The child appears.",
+        "Someone has appeared.",
+        "People who wear helmets when riding electric vehicles",
+        "Play at the door",
+        "The person in white clothes",
+        "the person in black clothes",
+        "the person wearing a helmet",
+        "car"
+      ]
+    }
+  },
+  {
+    "data_id": 606,
+    "file_name": "男子凌晨巷内盗窃电动车.mp4",
+    "file_type": "mp4",
+    "file_size": 0,
+    "tos": {
+      "bucket": "xujianhua-utils",
+      "key": "AI-IPC/VideoRetrieval&IntelligentAlert/electric_scooter/男子凌晨巷内盗窃电动车.mp4"
+    },
+    "annotation_id": 226,
+    "original_annotation": {
+      "description": "戴头盔的男子骑行电瓶车驶离院子",
+      "title": "深夜骑车出门",
+      "event": [
+        "有人出现",
+        "男人出现",
+        "骑电瓶车没有戴头盔的人",
+        "戴帽子的人"
+      ]
+    },
+    "english_annotation": {
+      "description": "The man wearing a helmet rides an electric scooter and leaves the yard.",
+      "title": "Go out for a bike ride late at night",
+      "event": [
+        "Someone has appeared.",
+        "The man appears.",
+        "People who ride electric scooters without wearing helmets",
+        "the person wearing a hat"
+      ]
+    }
+  }
+]
