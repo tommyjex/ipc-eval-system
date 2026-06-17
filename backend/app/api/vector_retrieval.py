@@ -10,6 +10,7 @@ from app.schemas.vector_retrieval import (
     VectorRetrievalEvaluateRequest,
     VectorRetrievalEvaluateResponse,
     VectorRetrievalQueryResponse,
+    VectorRetrievalSite,
 )
 from app.services.vector_retrieval import (
     RerankClient,
@@ -47,9 +48,9 @@ def _build_post_process_ops_from_tags(tags: list[str]) -> list[dict] | None:
     response_model=list[VectorCollectionResponse],
     summary="查询 VikingDB Collection 列表",
 )
-def list_vector_collections(keyword: str | None = None):
+def list_vector_collections(site: VectorRetrievalSite = "byteplus", keyword: str | None = None):
     try:
-        collections = VikingDBCollectionClient().list_collections(keyword=keyword)
+        collections = VikingDBCollectionClient(site=site).list_collections(keyword=keyword)
     except VectorRetrievalConfigError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -64,9 +65,9 @@ def list_vector_collections(keyword: str | None = None):
     response_model=list[VectorIndexResponse],
     summary="查询指定 Collection 的 VikingDB Index 列表",
 )
-def list_vector_indexes(collection_name: str):
+def list_vector_indexes(collection_name: str, site: VectorRetrievalSite = "byteplus"):
     try:
-        indexes = VikingDBCollectionClient().list_indexes(collection_name=collection_name)
+        indexes = VikingDBCollectionClient(site=site).list_indexes(collection_name=collection_name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except VectorRetrievalConfigError as exc:
@@ -126,7 +127,7 @@ def evaluate_vector_retrieval(
             collection_name = None
             index_name = None
 
-        search_client = VikingDBRetrievalClient()
+        search_client = VikingDBRetrievalClient(site=request.site)
         search_results = search_client.search(
             query=retrieval_query,
             top_k=request.top_k,
@@ -179,6 +180,7 @@ def evaluate_vector_retrieval(
     )
 
     return VectorRetrievalEvaluateResponse(
+        site=request.site,
         dataset_id=request.dataset_id,
         collection_name=request.collection_name,
         index_name=index_name,

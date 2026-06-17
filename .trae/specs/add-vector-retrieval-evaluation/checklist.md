@@ -63,3 +63,25 @@
 * [x] 规格明确已标记数据条目再次被鼠标左键双击时恢复白色
 
 * [x] 任务列表包含结果条目标记交互和验证任务
+
+* [x] 规格明确低分截断阈值输入框默认预填 `0.1`
+
+* [x] 规格明确 step delta 阈值输入框默认预填 `0.5`
+
+* [x] 规格明确 Rerank 模型默认选中 `base-multilingual-rerank`
+
+* [x] 任务列表包含默认配置值设置和验证任务
+
+* [x] 规格明确向量检索评估页大标题下提供“火山引擎”和“BytePlus”两个站点 Tab
+
+* [x] 规格明确火山引擎站点使用控制面 host `vikingdb.cn-beijing.volcengineapi.com`
+
+* [x] 规格明确火山引擎站点使用数据面 host `api-vikingdb.vikingdb.cn-beijing.volces.com`
+
+* [x] 规格明确火山引擎站点使用 `.env` 中与 TOS 相同的 AK/SK 作为 VikingDB 鉴权信息
+
+* [x] 规格明确火山引擎站点支持与 BytePlus 一致的 Collection 查询、Index 查询、检索、Rerank、截断和结果展示能力
+
+* [x] 任务列表包含站点选择、火山引擎配置、双站点接口适配和验证任务
+
+* [x] 已使用 `backend/.venv` 运行 `python -m pytest tests/test_vector_retrieval.py`，可执行验证火山引擎站点完成 `search -> rerank -> 截断` 链路

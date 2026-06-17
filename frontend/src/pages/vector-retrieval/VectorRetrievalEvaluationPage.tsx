@@ -5,11 +5,16 @@ import type {
   VectorIndex,
   VectorRetrievalEvaluateResponse,
   VectorRetrievalResultItem,
+  VectorRetrievalSite,
 } from '../../api';
 
 const RERANK_MODELS = ['m3-v2-rerank', 'base-multilingual-rerank'] as const;
 type RerankModel = (typeof RERANK_MODELS)[number];
 const RESULT_PAGE_SIZE = 10;
+const SITE_OPTIONS: Array<{ value: VectorRetrievalSite; label: string }> = [
+  { value: 'volcengine', label: '火山引擎' },
+  { value: 'byteplus', label: 'BytePlus' },
+];
 
 const formatScore = (score: number | null) => {
   if (score === null || score === undefined) {
@@ -226,6 +231,7 @@ function ResultSection({
 }
 
 export const VectorRetrievalEvaluationPage: React.FC = () => {
+  const [site, setSite] = useState<VectorRetrievalSite>('volcengine');
   const [collections, setCollections] = useState<VectorCollection[]>([]);
   const [collectionsLoading, setCollectionsLoading] = useState(true);
   const [collectionName, setCollectionName] = useState('');
@@ -234,9 +240,9 @@ export const VectorRetrievalEvaluationPage: React.FC = () => {
   const [indexName, setIndexName] = useState('');
   const [query, setQuery] = useState('');
   const [topK, setTopK] = useState(10);
-  const [rerankModel, setRerankModel] = useState<RerankModel>('m3-v2-rerank');
-  const [minScoreInput, setMinScoreInput] = useState('');
-  const [stepDeltaThresholdInput, setStepDeltaThresholdInput] = useState('');
+  const [rerankModel, setRerankModel] = useState<RerankModel>('base-multilingual-rerank');
+  const [minScoreInput, setMinScoreInput] = useState('0.1');
+  const [stepDeltaThresholdInput, setStepDeltaThresholdInput] = useState('0.5');
   const [filterInput, setFilterInput] = useState('');
   const [filterTags, setFilterTags] = useState<string[]>([]);
   const [filterError, setFilterError] = useState('');
@@ -251,8 +257,17 @@ export const VectorRetrievalEvaluationPage: React.FC = () => {
   useEffect(() => {
     const fetchCollections = async () => {
       setCollectionsLoading(true);
+      setCollections([]);
+      setCollectionName('');
+      setIndexes([]);
+      setIndexName('');
+      setResult(null);
+      setMarkedObjectIds(new Set());
+      setSearchPage(1);
+      setRerankPage(1);
+      setFinalPage(1);
       try {
-        const response = await vectorRetrievalApi.listCollections();
+        const response = await vectorRetrievalApi.listCollections({ site });
         setCollections(response);
         if (response.length > 0) {
           setCollectionName(response[0].collection_name);
@@ -265,7 +280,7 @@ export const VectorRetrievalEvaluationPage: React.FC = () => {
     };
 
     fetchCollections();
-  }, []);
+  }, [site]);
 
   const selectedCollection = useMemo(
     () => collections.find((collection) => collection.collection_name === collectionName) || null,
@@ -283,7 +298,7 @@ export const VectorRetrievalEvaluationPage: React.FC = () => {
       setIndexesLoading(true);
       setIndexName('');
       try {
-        const response = await vectorRetrievalApi.listIndexes({ collection_name: collectionName });
+        const response = await vectorRetrievalApi.listIndexes({ site, collection_name: collectionName });
         setIndexes(response);
         setIndexName(response[0]?.index_name || '');
       } catch (error) {
@@ -295,7 +310,7 @@ export const VectorRetrievalEvaluationPage: React.FC = () => {
     };
 
     fetchIndexes();
-  }, [collectionName]);
+  }, [site, collectionName]);
 
   const addFilterTag = () => {
     const tag = filterInput.trim();
@@ -368,6 +383,7 @@ export const VectorRetrievalEvaluationPage: React.FC = () => {
     setSubmitError('');
     try {
       const response = await vectorRetrievalApi.evaluate({
+        site,
         collection_name: collectionName,
         index_name: indexName,
         query: query.trim(),
@@ -419,6 +435,23 @@ export const VectorRetrievalEvaluationPage: React.FC = () => {
         <p className="mt-2 text-sm text-gray-600">
           基于 VikingDB Collection 和文字 query 发起检索，并展示 search、rerank 与截断后的最终结果。
         </p>
+        <div className="mt-4 inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
+          {SITE_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setSite(option.value)}
+              disabled={submitting}
+              className={`rounded-md px-4 py-2 text-sm font-medium transition ${
+                site === option.value
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-white hover:text-gray-900'
+              } disabled:cursor-not-allowed disabled:opacity-60`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <section className="rounded-lg bg-white p-5 shadow">
@@ -446,7 +479,9 @@ export const VectorRetrievalEvaluationPage: React.FC = () => {
             </select>
             {selectedCollection && (
               <span className="mt-1 block text-xs text-gray-500">
-                {selectedCollection.data_count !== null ? `数据量：${selectedCollection.data_count}` : '已选择 Collection'}
+                {selectedCollection.data_count !== null
+                  ? `${SITE_OPTIONS.find((option) => option.value === site)?.label} 数据量：${selectedCollection.data_count}`
+                  : `已选择 ${SITE_OPTIONS.find((option) => option.value === site)?.label} Collection`}
               </span>
             )}
           </label>
@@ -620,6 +655,9 @@ export const VectorRetrievalEvaluationPage: React.FC = () => {
             <div>
               <div className="text-sm text-gray-500">搜索 query</div>
               <div className="mt-1 font-medium text-gray-900">{result.query.file_name}</div>
+              <div className="mt-1 text-xs text-gray-500">
+                站点: {SITE_OPTIONS.find((option) => option.value === result.site)?.label || result.site}
+              </div>
               <div className="mt-1 text-xs text-gray-500">Collection: {result.collection_name || '-'}</div>
               <div className="mt-1 text-xs text-gray-500">Index: {result.index_name || '-'}</div>
             </div>
@@ -661,6 +699,7 @@ export const VectorRetrievalEvaluationPage: React.FC = () => {
                   scalar_filter: result.scalar_filter,
                   post_process_ops: result.post_process_ops,
                   rerank_model: result.rerank_model,
+                  site: result.site,
                   collection_name: result.collection_name,
                   index_name: result.index_name,
                   multimodal_input: result.query.multimodal_input,

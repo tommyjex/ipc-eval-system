@@ -2,8 +2,11 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+VectorRetrievalSite = Literal["byteplus", "volcengine"]
+
 
 class VectorRetrievalEvaluateRequest(BaseModel):
+    site: VectorRetrievalSite = Field("byteplus", description="向量检索站点")
     dataset_id: Optional[int] = Field(None, ge=1, description="兼容旧链路的评测集ID")
     data_id: Optional[int] = Field(
         None, ge=1, description="指定评测数据ID；不传时使用评测集首条数据"
@@ -69,6 +72,7 @@ class VectorRetrievalResultItem(BaseModel):
 
 
 class VectorRetrievalEvaluateResponse(BaseModel):
+    site: VectorRetrievalSite = "byteplus"
     dataset_id: Optional[int] = None
     collection_name: Optional[str] = None
     index_name: Optional[str] = None

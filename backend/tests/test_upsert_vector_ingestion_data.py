@@ -16,10 +16,15 @@ def _source_record(data_id: int = 1):
     return {
         "data_id": data_id,
         "file_name": "cat.mp4",
+        "original_annotation": {
+            "title": "骑电车要注意哦",
+            "description": "一名人员骑着电动车经过路口。",
+            "event": ["骑车", "经过路口"],
+        },
         "english_annotation": {
-            "description": "A cat is drinking water.",
-            "title": "Cat Drinking",
-            "event": ["cat", "drink water"],
+            "title": "Ride safely",
+            "description": "A person rides an electric bike through the intersection.",
+            "event": ["riding", "passing intersection"],
         },
     }
 
@@ -29,10 +34,27 @@ def test_build_vikingdb_data_item_maps_required_fields():
 
     assert item == {
         "id": "1",
-        "description": "A cat is drinking water.",
-        "title": "Cat Drinking",
-        "event": "cat;drink water",
-        "des": "A cat is drinking water.;Cat Drinking;cat;drink water",
+        "title": "骑电车要注意哦",
+        "description": "一名人员骑着电动车经过路口。",
+        "event": "骑车;经过路口",
+        "des": "骑电车要注意哦;一名人员骑着电动车经过路口。;骑车;经过路口",
+        "name": "cat.mp4",
+    }
+
+
+def test_build_vikingdb_data_item_supports_english_annotation_source():
+    item = build_vikingdb_data_item(
+        _source_record(),
+        primary_key_field="id",
+        annotation_source="english",
+    )
+
+    assert item == {
+        "id": "1",
+        "title": "Ride safely",
+        "description": "A person rides an electric bike through the intersection.",
+        "event": "riding;passing intersection",
+        "des": "Ride safely;A person rides an electric bike through the intersection.;riding;passing intersection",
         "name": "cat.mp4",
     }
 
@@ -44,8 +66,16 @@ def test_build_vikingdb_data_item_supports_custom_primary_key_field():
 
 
 def test_build_vikingdb_data_item_requires_annotation_object():
-    with pytest.raises(UpsertPreparationError, match="english_annotation"):
+    with pytest.raises(UpsertPreparationError, match="original_annotation"):
         build_vikingdb_data_item({"data_id": 1, "file_name": "a.mp4"})
+
+
+def test_build_vikingdb_data_item_requires_english_annotation_object():
+    with pytest.raises(UpsertPreparationError, match="english_annotation"):
+        build_vikingdb_data_item(
+            {"data_id": 1, "file_name": "a.mp4", "original_annotation": {}},
+            annotation_source="english",
+        )
 
 
 def test_chunked_limits_batch_size_to_100():

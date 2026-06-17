@@ -5,7 +5,7 @@ import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Protocol
+from typing import Any, Iterable, Literal, Protocol
 
 from vikingdb.auth import IAM  # type: ignore
 from vikingdb.vector import VikingVector  # type: ignore
@@ -14,6 +14,8 @@ BACKEND_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INPUT_PATH = BACKEND_ROOT / "outputs" / "vector_ingestion_dataset_7_en.json"
 DEFAULT_BATCH_SIZE = 100
 DEFAULT_PRIMARY_KEY_FIELD = "id"
+DEFAULT_SITE: Literal["byteplus", "volcengine"] = "byteplus"
+DEFAULT_ANNOTATION_SOURCE: Literal["original", "english"] = "original"
 
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
@@ -51,11 +53,16 @@ def load_source_payload(input_path: Path) -> list[dict[str, Any]]:
     return payload
 
 
-def _read_english_annotation(record: dict[str, Any]) -> dict[str, Any]:
-    annotation = record.get("english_annotation")
+def _read_annotation(
+    record: dict[str, Any],
+    *,
+    annotation_source: Literal["original", "english"] = DEFAULT_ANNOTATION_SOURCE,
+) -> dict[str, Any]:
+    field_name = "original_annotation" if annotation_source == "original" else "english_annotation"
+    annotation = record.get(field_name)
     if not isinstance(annotation, dict):
         data_id = record.get("data_id")
-        raise UpsertPreparationError(f"english_annotation 缺失或不是对象: data_id={data_id}")
+        raise UpsertPreparationError(f"{field_name} 缺失或不是对象: data_id={data_id}")
     return annotation
 
 
@@ -71,8 +78,9 @@ def build_vikingdb_data_item(
     record: dict[str, Any],
     *,
     primary_key_field: str = DEFAULT_PRIMARY_KEY_FIELD,
+    annotation_source: Literal["original", "english"] = DEFAULT_ANNOTATION_SOURCE,
 ) -> dict[str, Any]:
-    annotation = _read_english_annotation(record)
+    annotation = _read_annotation(record, annotation_source=annotation_source)
     data_id = record.get("data_id")
     file_name = record.get("file_name")
 
@@ -81,17 +89,17 @@ def build_vikingdb_data_item(
     if not file_name:
         raise UpsertPreparationError(f"file_name 缺失: data_id={data_id}")
 
-    description = annotation.get("description") or ""
     title = annotation.get("title") or ""
+    description = annotation.get("description") or ""
     event = annotation.get("event") or []
     event_text = _stringify_event(event)
 
     return {
         primary_key_field: str(data_id),
-        "description": str(description),
         "title": str(title),
+        "description": str(description),
         "event": event_text,
-        "des": ";".join([str(description), str(title), event_text]),
+        "des": ";".join([str(title), str(description), event_text]),
         "name": str(file_name),
     }
 
@@ -100,9 +108,14 @@ def build_vikingdb_data(
     payload: list[dict[str, Any]],
     *,
     primary_key_field: str = DEFAULT_PRIMARY_KEY_FIELD,
+    annotation_source: Literal["original", "english"] = DEFAULT_ANNOTATION_SOURCE,
 ) -> list[dict[str, Any]]:
     return [
-        build_vikingdb_data_item(record, primary_key_field=primary_key_field)
+        build_vikingdb_data_item(
+            record,
+            primary_key_field=primary_key_field,
+            annotation_source=annotation_source,
+        )
         for record in payload
     ]
 
@@ -114,31 +127,27 @@ def chunked(items: list[dict[str, Any]], batch_size: int) -> Iterable[list[dict[
         yield items[index : index + batch_size]
 
 
-def create_vikingdb_collection_client() -> Any:
+def create_vikingdb_collection_client(
+    collection_name: str | None = None,
+    *,
+    site: Literal["byteplus", "volcengine"] = DEFAULT_SITE,
+) -> Any:
     from app.core.config import get_settings
+    from app.services.vector_retrieval import _resolve_vikingdb_runtime_config
 
     settings = get_settings()
-    missing = [
-        name
-        for name in (
-            "vikingdb_host",
-            "vikingdb_region",
-            "vikingdb_collection",
-            "vikingdb_access_key",
-            "vikingdb_secret_key",
-        )
-        if not getattr(settings, name, None)
-    ]
-    if missing:
-        raise UpsertPreparationError(f"VikingDB 配置缺失: {', '.join(missing)}")
+    config = _resolve_vikingdb_runtime_config(settings, site)
 
     client = VikingVector(
-        host=settings.vikingdb_host,
-        region=settings.vikingdb_region,
-        auth=IAM(ak=settings.vikingdb_access_key, sk=settings.vikingdb_secret_key),
+        host=config.host,
+        region=config.region,
+        auth=IAM(ak=config.access_key, sk=config.secret_key),
         scheme="https",
     )
-    return client.collection(collection_name=settings.vikingdb_collection)
+    target_collection = collection_name or config.collection
+    if not target_collection:
+        raise UpsertPreparationError("VikingDB Collection 未指定，请配置 vikingdb_collection 或传入 --collection")
+    return client.collection(collection_name=target_collection)
 
 
 def upsert_data_batches(
@@ -175,9 +184,16 @@ def prepare_and_upsert(
     batch_size: int,
     async_write: bool,
     primary_key_field: str,
+    collection_name: str | None = None,
+    site: Literal["byteplus", "volcengine"] = DEFAULT_SITE,
+    annotation_source: Literal["original", "english"] = DEFAULT_ANNOTATION_SOURCE,
 ) -> UpsertSummary:
     payload = load_source_payload(input_path)
-    data = build_vikingdb_data(payload, primary_key_field=primary_key_field)
+    data = build_vikingdb_data(
+        payload,
+        primary_key_field=primary_key_field,
+        annotation_source=annotation_source,
+    )
     batch_count = len(list(chunked(data, batch_size)))
 
     if dry_run:
@@ -185,7 +201,10 @@ def prepare_and_upsert(
         print(json.dumps({"count": len(data), "first_item": preview}, ensure_ascii=False, indent=2))
         return UpsertSummary(total_count=len(data), batch_count=batch_count, dry_run=True)
 
-    collection_client = create_vikingdb_collection_client()
+    collection_client = create_vikingdb_collection_client(
+        collection_name=collection_name,
+        site=site,
+    )
     actual_batch_count = upsert_data_batches(
         data,
         collection_client,
@@ -220,6 +239,22 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_PRIMARY_KEY_FIELD,
         help=f"Collection 主键字段名，默认 {DEFAULT_PRIMARY_KEY_FIELD}。",
     )
+    parser.add_argument(
+        "--collection",
+        help="目标 VikingDB Collection 名称；未传时使用 .env 中的 vikingdb_collection。",
+    )
+    parser.add_argument(
+        "--site",
+        choices=["byteplus", "volcengine"],
+        default=DEFAULT_SITE,
+        help=f"目标向量库站点，默认 {DEFAULT_SITE}。",
+    )
+    parser.add_argument(
+        "--annotation-source",
+        choices=["original", "english"],
+        default=DEFAULT_ANNOTATION_SOURCE,
+        help=f"读取的标注字段来源，默认 {DEFAULT_ANNOTATION_SOURCE}。",
+    )
     return parser.parse_args()
 
 
@@ -232,6 +267,9 @@ def main() -> int:
             batch_size=args.batch_size,
             async_write=args.async_write,
             primary_key_field=args.primary_key_field,
+            collection_name=args.collection,
+            site=args.site,
+            annotation_source=args.annotation_source,
         )
     except UpsertPreparationError as exc:
         print(f"失败: {exc}")

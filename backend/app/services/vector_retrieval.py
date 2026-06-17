@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Literal, Optional
 
 from app.core.config import get_settings
 
 IMAGE_TYPES = {"jpg", "jpeg", "png", "gif", "bmp", "webp"}
 VIDEO_TYPES = {"mp4", "avi", "mov", "mkv", "flv", "wmv", "webm"}
+VectorRetrievalSite = Literal["byteplus", "volcengine"]
+VOLCENGINE_VIKINGDB_CONTROL_HOST = "vikingdb.cn-beijing.volcengineapi.com"
+VOLCENGINE_VIKINGDB_DATA_HOST = "api-vikingdb.vikingdb.cn-beijing.volces.com"
+VOLCENGINE_VIKINGDB_REGION = "cn-beijing"
 
 
 class VectorRetrievalConfigError(RuntimeError):
@@ -16,6 +20,18 @@ class VectorRetrievalConfigError(RuntimeError):
 
 class VectorRetrievalExternalError(RuntimeError):
     pass
+
+
+@dataclass
+class VikingDBRuntimeConfig:
+    site: VectorRetrievalSite
+    host: str
+    control_host: str
+    region: str
+    access_key: str
+    secret_key: str
+    collection: Optional[str] = None
+    index: Optional[str] = None
 
 
 @dataclass
@@ -113,6 +129,54 @@ def _validate_vikingdb_config(settings: object) -> None:
     )
     if missing:
         raise VectorRetrievalConfigError(f"VikingDB 配置缺失: {', '.join(missing)}")
+
+
+def _resolve_vikingdb_runtime_config(
+    settings: object,
+    site: VectorRetrievalSite = "byteplus",
+) -> VikingDBRuntimeConfig:
+    if site == "volcengine":
+        missing = _missing_fields(settings, ["tos_access_key", "tos_secret_key"])
+        if missing:
+            raise VectorRetrievalConfigError(
+                f"火山引擎 VikingDB 配置缺失: {', '.join(missing)}"
+            )
+        return VikingDBRuntimeConfig(
+            site=site,
+            host=VOLCENGINE_VIKINGDB_DATA_HOST,
+            control_host=VOLCENGINE_VIKINGDB_CONTROL_HOST,
+            region=VOLCENGINE_VIKINGDB_REGION,
+            access_key=str(getattr(settings, "tos_access_key")),
+            secret_key=str(getattr(settings, "tos_secret_key")),
+            collection=getattr(settings, "vikingdb_collection", None),
+            index=getattr(settings, "vikingdb_index", None),
+        )
+
+    if site != "byteplus":
+        raise VectorRetrievalConfigError(f"不支持的向量检索站点: {site}")
+
+    missing = _missing_fields(
+        settings,
+        [
+            "vikingdb_host",
+            "vikingdb_region",
+            "vikingdb_access_key",
+            "vikingdb_secret_key",
+        ],
+    )
+    if missing:
+        raise VectorRetrievalConfigError(f"BytePlus VikingDB 配置缺失: {', '.join(missing)}")
+
+    return VikingDBRuntimeConfig(
+        site=site,
+        host=str(getattr(settings, "vikingdb_host")),
+        control_host=_resolve_vikingdb_control_host(settings),
+        region=str(getattr(settings, "vikingdb_region")),
+        access_key=str(getattr(settings, "vikingdb_access_key")),
+        secret_key=str(getattr(settings, "vikingdb_secret_key")),
+        collection=getattr(settings, "vikingdb_collection", None),
+        index=getattr(settings, "vikingdb_index", None),
+    )
 
 
 def _resolve_vikingdb_control_host(settings: object) -> str:
@@ -259,18 +323,22 @@ def normalize_search_candidate(candidate: Any, rank: int) -> RetrievalCandidate:
 
 
 class VikingDBRetrievalClient:
-    def __init__(self, client_factory: Optional[Callable[..., Any]] = None):
+    def __init__(
+        self,
+        site: VectorRetrievalSite = "byteplus",
+        client_factory: Optional[Callable[..., Any]] = None,
+    ):
         self.settings = get_settings()
-        _validate_vikingdb_config(self.settings)
+        self.config = _resolve_vikingdb_runtime_config(self.settings, site)
         self._client_factory = client_factory
 
     def _create_sdk_client(self) -> Any:
         if self._client_factory:
             return self._client_factory(
-                host=self.settings.vikingdb_host,
-                region=self.settings.vikingdb_region,
-                ak=self.settings.vikingdb_access_key,
-                sk=self.settings.vikingdb_secret_key,
+                host=self.config.host,
+                region=self.config.region,
+                ak=self.config.access_key,
+                sk=self.config.secret_key,
             )
 
         try:
@@ -282,9 +350,9 @@ class VikingDBRetrievalClient:
             ) from exc
 
         return VikingVector(
-            host=self.settings.vikingdb_host,
-            region=self.settings.vikingdb_region,
-            auth=IAM(ak=self.settings.vikingdb_access_key, sk=self.settings.vikingdb_secret_key),
+            host=self.config.host,
+            region=self.config.region,
+            auth=IAM(ak=self.config.access_key, sk=self.config.secret_key),
             scheme="https",
         )
 
@@ -294,8 +362,12 @@ class VikingDBRetrievalClient:
         collection_name: Optional[str] = None,
         index_name: Optional[str] = None,
     ) -> Any:
-        target_collection = collection_name or self.settings.vikingdb_collection
-        target_index = index_name or self.settings.vikingdb_index
+        target_collection = collection_name or self.config.collection
+        target_index = index_name or self.config.index
+        if not target_collection:
+            raise VectorRetrievalConfigError("VikingDB Collection 名称不能为空")
+        if not target_index:
+            raise VectorRetrievalConfigError("VikingDB Index 名称不能为空")
         if hasattr(client, "index"):
             return client.index(
                 collection_name=target_collection,
@@ -369,9 +441,13 @@ class VikingDBRetrievalClient:
 
 
 class VikingDBCollectionClient:
-    def __init__(self, api_factory: Optional[Callable[[], Any]] = None):
+    def __init__(
+        self,
+        site: VectorRetrievalSite = "byteplus",
+        api_factory: Optional[Callable[[], Any]] = None,
+    ):
         self.settings = get_settings()
-        _validate_vikingdb_config(self.settings)
+        self.config = _resolve_vikingdb_runtime_config(self.settings, site)
         self._api_factory = api_factory
 
     def _create_api_client(self) -> Any:
@@ -388,10 +464,10 @@ class VikingDBCollectionClient:
             ) from exc
 
         configuration = volcenginesdkcore.Configuration()
-        configuration.ak = self.settings.vikingdb_access_key
-        configuration.sk = self.settings.vikingdb_secret_key
-        configuration.region = self.settings.vikingdb_region
-        configuration.host = _resolve_vikingdb_control_host(self.settings)
+        configuration.ak = self.config.access_key
+        configuration.sk = self.config.secret_key
+        configuration.region = self.config.region
+        configuration.host = self.config.control_host
         configuration.scheme = "https"
         volcenginesdkcore.Configuration.set_default(configuration)
 

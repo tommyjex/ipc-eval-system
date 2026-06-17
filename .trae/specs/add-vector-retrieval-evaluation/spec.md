@@ -20,6 +20,8 @@
 - 追加迭代：前端增加低分截断阈值和 step delta 阈值输入框，提交时覆盖后端默认截断配置。
 - 追加迭代：Search 原始结果、Rerank 排序结果、截断后最终结果三个列表增加分页，每页最多展示 10 条。
 - 追加迭代：向量检索结果页支持鼠标左键双击标记特定数据条目，按该条目是否进入最终结果同步高亮三个列表。
+- 追加迭代：前端页面预填低分截断阈值、step delta 阈值和 Rerank 模型默认值，减少用户首次配置成本。
+- 追加迭代：向量检索评估页增加“火山引擎”和“BytePlus”站点 Tab，支持使用火山引擎 VikingDB 完成与 BytePlus 一致的向量检索效果评估。
 
 ## Impact
 - Affected specs: vector-retrieval-evaluation
@@ -110,19 +112,26 @@
 
 ## MODIFIED Requirements
 ### Requirement: 向量检索评估配置
-系统 SHALL 提供向量检索配置页面，允许用户从 VikingDB Collection 列表选择检索数据集，基于选中 Collection 查询并选择 VikingDB Index，输入文字 query，设置检索数量 `top_k`，配置低分截断阈值和 step delta 阈值，并通过标签化输入控件填写标量过滤条件。
+系统 SHALL 提供向量检索配置页面，允许用户选择评估站点，从对应站点的 VikingDB Collection 列表选择检索数据集，基于选中 Collection 查询并选择 VikingDB Index，输入文字 query，设置检索数量 `top_k`，配置低分截断阈值和 step delta 阈值，并通过标签化输入控件填写标量过滤条件。
+
+#### Scenario: 用户选择评估站点
+- **WHEN** 用户打开向量检索评估页面
+- **THEN** 页面大标题下方 SHALL 展示两个 Tab，分别为“火山引擎”和“BytePlus”
+- **AND** 用户 SHALL 可以通过 Tab 切换当前评估站点
+- **AND** 切换站点后，Collection 列表、Index 列表和检索请求 SHALL 使用当前选中站点的 VikingDB 配置
+- **AND** 切换站点后，页面 SHALL 清空或刷新不属于当前站点的 Collection、Index 和检索结果状态
 
 #### Scenario: 用户选择 VikingDB 数据集
 - **WHEN** 用户打开向量检索评估页面
-- **THEN** 前端 SHALL 调用后端接口获取 VikingDB Collection 列表
-- **AND** 后端 SHALL 参考 BytePlus VikingDB `listVikingdbCollection` 接口查询 Collection
+- **THEN** 前端 SHALL 调用后端接口获取当前站点的 VikingDB Collection 列表
+- **AND** 后端 SHALL 根据站点选择分别参考 BytePlus 或火山引擎 VikingDB `listVikingdbCollection` 接口查询 Collection
 - **AND** 数据集下拉框 SHALL 展示 VikingDB Collection 名称
 - **AND** 页面 SHALL 不再使用本项目业务评测集列表作为该下拉框的数据源
 
 #### Scenario: 用户选择 VikingDB Index
 - **WHEN** 用户选择一个 VikingDB Collection
 - **THEN** 前端 SHALL 调用后端接口查询该 Collection 下的 Index 列表
-- **AND** 后端 SHALL 参考 BytePlus VikingDB `ListVikingdbIndex` 接口查询 Index
+- **AND** 后端 SHALL 根据站点选择分别参考 BytePlus 或火山引擎 VikingDB `ListVikingdbIndex` 接口查询 Index
 - **AND** 前端 SHALL 展示 Index 筛选框供用户选择
 - **AND** 若该 Collection 存在多个 Index，用户 SHALL 可以在筛选框中切换
 - **AND** 检索请求 SHALL 包含用户选择的 Index 名称
@@ -149,9 +158,16 @@
 #### Scenario: 用户配置截断阈值
 - **WHEN** 用户打开向量检索评估页面
 - **THEN** 页面 SHALL 展示低分截断阈值输入框和 step delta 阈值输入框
+- **AND** 低分截断阈值输入框 SHALL 默认预填 `0.1`
+- **AND** step delta 阈值输入框 SHALL 默认预填 `0.5`
 - **AND** 用户 SHALL 可以留空任一阈值以使用后端默认配置
 - **AND** 用户填写阈值时前端 SHALL 将其作为数字提交给后端
 - **AND** 阈值输入非法时前端 SHALL 阻止提交并展示错误提示
+
+#### Scenario: 用户配置 Rerank 模型
+- **WHEN** 用户打开向量检索评估页面
+- **THEN** Rerank 模型下拉框 SHALL 默认选中 `base-multilingual-rerank`
+- **AND** 用户 SHALL 可以继续切换到其他可用 Rerank 模型
 
 #### Scenario: 用户发起检索
 - **WHEN** 用户完成 Collection、Index、query、`top_k`、截断阈值和过滤标签配置后点击按钮
@@ -161,15 +177,28 @@
 - **AND** 请求 SHALL 包含 Collection 名称、Index 名称、文字 query、`top_k`、低分截断阈值、step delta 阈值和过滤标签列表
 
 ### Requirement: VikingDB 多模态检索
-系统 SHALL 在后端支持基于文字 query 和指定 VikingDB Collection 发起检索，并继续在检索完成后执行 rerank 与截断链路。
+系统 SHALL 在后端支持基于文字 query、指定评估站点和指定 VikingDB Collection 发起检索，并继续在检索完成后执行 rerank 与截断链路。
 
 #### Scenario: 后端基于文字 query 发起检索
-- **WHEN** 后端收到包含 Collection 名称和文字 query 的检索请求
-- **THEN** 后端 SHALL 使用请求中的 Collection 名称作为 VikingDB 检索目标
+- **WHEN** 后端收到包含站点、Collection 名称和文字 query 的检索请求
+- **THEN** 后端 SHALL 使用请求中的站点选择对应的 VikingDB 数据面 host 和鉴权配置
+- **AND** 后端 SHALL 使用请求中的 Collection 名称作为 VikingDB 检索目标
 - **AND** 后端 SHALL 使用请求中的 Index 名称作为 VikingDB 检索索引
 - **AND** 后端 SHALL 将文字 query 映射为 VikingDB `search_by_multi_modal` 的 text 检索输入
 - **AND** 请求 SHALL 传入 `limit=top_k`
 - **AND** 若用户提供过滤标签，后端 SHALL 将标签转换为 VikingDB 可接受的标量过滤参数
+
+#### Scenario: 火山引擎 VikingDB 配置
+- **WHEN** 当前站点为“火山引擎”
+- **THEN** 后端 SHALL 使用控制面 host `vikingdb.cn-beijing.volcengineapi.com` 查询 Collection 和 Index
+- **AND** 后端 SHALL 使用数据面 host `api-vikingdb.vikingdb.cn-beijing.volces.com` 发起检索
+- **AND** 后端 SHALL 使用 `.env` 中与 TOS 相同的 AK/SK 作为火山引擎 VikingDB 鉴权信息
+- **AND** 火山引擎站点 SHALL 支持与 BytePlus 站点一致的 Collection 查询、Index 查询、文字 query 检索、Rerank、截断、分页和结果标记能力
+
+#### Scenario: BytePlus VikingDB 配置
+- **WHEN** 当前站点为“BytePlus”
+- **THEN** 后端 SHALL 继续使用现有 BytePlus VikingDB 控制面 host、数据面 host、AK/SK 和 region 配置
+- **AND** 现有 BytePlus 向量检索评估能力 SHALL 保持兼容
 
 ### Requirement: 搜索结果展示页
 系统 SHALL 提供易读的向量检索搜索结果展示页，分别展示 Search 原始结果、Rerank 排序结果和截断后最终结果，并按不同阶段隐藏不相关字段。

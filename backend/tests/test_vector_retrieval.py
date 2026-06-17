@@ -20,6 +20,7 @@ from app.services.vector_retrieval import (
     VectorIndex,
     VectorRetrievalConfigError,
     _extract_result_items,
+    _resolve_vikingdb_runtime_config,
     _validate_vikingdb_config,
     apply_truncation,
     normalize_search_candidate,
@@ -85,6 +86,45 @@ def test_vikingdb_config_missing_fields_has_clear_error():
         _validate_vikingdb_config(settings)
 
 
+def test_volcengine_vikingdb_config_uses_tos_credentials():
+    settings = SimpleNamespace(
+        tos_access_key="tos-ak",
+        tos_secret_key="tos-sk",
+        vikingdb_collection=None,
+        vikingdb_index=None,
+    )
+
+    config = _resolve_vikingdb_runtime_config(settings, "volcengine")
+
+    assert config.site == "volcengine"
+    assert config.host == "api-vikingdb.vikingdb.cn-beijing.volces.com"
+    assert config.control_host == "vikingdb.cn-beijing.volcengineapi.com"
+    assert config.region == "cn-beijing"
+    assert config.access_key == "tos-ak"
+    assert config.secret_key == "tos-sk"
+
+
+def test_byteplus_vikingdb_config_keeps_existing_settings():
+    settings = SimpleNamespace(
+        vikingdb_host="api-vikingdb.mlp.ap-mya.byteplus.com",
+        vikingdb_control_host="control.byteplus.example.com",
+        vikingdb_region="ap-southeast-1",
+        vikingdb_access_key="byteplus-ak",
+        vikingdb_secret_key="byteplus-sk",
+        vikingdb_collection="ipc_eval",
+        vikingdb_index="ipc_eval_index",
+    )
+
+    config = _resolve_vikingdb_runtime_config(settings, "byteplus")
+
+    assert config.site == "byteplus"
+    assert config.host == "api-vikingdb.mlp.ap-mya.byteplus.com"
+    assert config.control_host == "control.byteplus.example.com"
+    assert config.region == "ap-southeast-1"
+    assert config.access_key == "byteplus-ak"
+    assert config.secret_key == "byteplus-sk"
+
+
 def test_normalize_search_candidate_reads_vikingdb_fields_name():
     candidate = SimpleNamespace(
         id="object-1",
@@ -129,9 +169,11 @@ def test_vector_collection_list_api_uses_vikingdb_collections(monkeypatch):
                 )
             ]
 
-    monkeypatch.setattr(
-        vector_retrieval_api, "VikingDBCollectionClient", lambda: FakeCollectionClient()
-    )
+    def fake_collection_client(site="byteplus"):
+        assert site == "byteplus"
+        return FakeCollectionClient()
+
+    monkeypatch.setattr(vector_retrieval_api, "VikingDBCollectionClient", fake_collection_client)
 
     app = FastAPI()
     app.include_router(vector_retrieval_api.router, prefix="/api")
@@ -165,9 +207,11 @@ def test_vector_index_list_api_uses_selected_collection(monkeypatch):
                 )
             ]
 
-    monkeypatch.setattr(
-        vector_retrieval_api, "VikingDBCollectionClient", lambda: FakeCollectionClient()
-    )
+    def fake_collection_client(site="byteplus"):
+        assert site == "volcengine"
+        return FakeCollectionClient()
+
+    monkeypatch.setattr(vector_retrieval_api, "VikingDBCollectionClient", fake_collection_client)
 
     app = FastAPI()
     app.include_router(vector_retrieval_api.router, prefix="/api")
@@ -175,7 +219,7 @@ def test_vector_index_list_api_uses_selected_collection(monkeypatch):
 
     response = client.get(
         "/api/vector-retrieval/indexes",
-        params={"collection_name": "ipc_eval"},
+        params={"collection_name": "ipc_eval", "site": "volcengine"},
     )
 
     assert response.status_code == 200
@@ -324,7 +368,11 @@ def test_vector_retrieval_api_uses_mocked_search_rerank_and_truncation(monkeypat
             return [0.95, 0.61, 0.6]
 
     monkeypatch.setattr(vector_retrieval_api, "get_tos_client", lambda: FakeTOSClient())
-    monkeypatch.setattr(vector_retrieval_api, "VikingDBRetrievalClient", lambda: FakeSearchClient())
+    def fake_search_client(site="byteplus"):
+        assert site == "byteplus"
+        return FakeSearchClient()
+
+    monkeypatch.setattr(vector_retrieval_api, "VikingDBRetrievalClient", fake_search_client)
     monkeypatch.setattr(vector_retrieval_api, "RerankClient", lambda: FakeRerankClient())
     monkeypatch.setattr(
         vector_retrieval_api,
@@ -354,6 +402,7 @@ def test_vector_retrieval_api_uses_mocked_search_rerank_and_truncation(monkeypat
     assert response.status_code == 200
     data = response.json()
     assert data["query"]["data_id"] == 11
+    assert data["site"] == "byteplus"
     assert data["rerank_model"] == "base-multilingual-rerank"
     assert [item["object_id"] for item in data["rerank_results"]] == ["a", "b", "c"]
     assert [item["object_id"] for item in data["final_results"]] == ["a"]
@@ -361,7 +410,7 @@ def test_vector_retrieval_api_uses_mocked_search_rerank_and_truncation(monkeypat
     assert data["truncate_reason"] == "step_delta>=0.3"
 
 
-def test_vector_retrieval_api_supports_text_query_collection_and_filter_tags(monkeypatch):
+def test_vector_retrieval_api_volcengine_completes_search_rerank_and_truncation(monkeypatch):
     class FakeSearchClient:
         def search(
             self,
@@ -388,9 +437,13 @@ def test_vector_retrieval_api_supports_text_query_collection_and_filter_tags(mon
             assert query.data_id is None
             assert query.file_name == "person falling"
             assert rerank_model == "m3-v2-rerank"
-            return [0.88, 0.66]
+            return [0.88, 0.2]
 
-    monkeypatch.setattr(vector_retrieval_api, "VikingDBRetrievalClient", lambda: FakeSearchClient())
+    def fake_search_client(site="byteplus"):
+        assert site == "volcengine"
+        return FakeSearchClient()
+
+    monkeypatch.setattr(vector_retrieval_api, "VikingDBRetrievalClient", fake_search_client)
     monkeypatch.setattr(vector_retrieval_api, "RerankClient", lambda: FakeRerankClient())
     monkeypatch.setattr(
         vector_retrieval_api,
@@ -409,17 +462,20 @@ def test_vector_retrieval_api_supports_text_query_collection_and_filter_tags(mon
         "/api/vector-retrieval/evaluate",
         json={
             "collection_name": "ipc_eval",
+            "site": "volcengine",
             "index_name": "ipc_eval_index",
             "query": "person falling",
             "top_k": 5,
             "rerank_model": "m3-v2-rerank",
             "filter_tags": ["person", "fall"],
+            "step_delta_threshold": 0.5,
         },
     )
 
     assert response.status_code == 200
     data = response.json()
     assert data["dataset_id"] is None
+    assert data["site"] == "volcengine"
     assert data["collection_name"] == "ipc_eval"
     assert data["index_name"] == "ipc_eval_index"
     assert data["post_process_ops"] == [
@@ -427,4 +483,7 @@ def test_vector_retrieval_api_supports_text_query_collection_and_filter_tags(mon
         {"op": "string_contain", "field": "des", "pattern": "fall"},
     ]
     assert data["query"]["multimodal_input"] == {"text": "person falling"}
-    assert [item["object_id"] for item in data["final_results"]] == ["a", "b"]
+    assert [item["object_id"] for item in data["rerank_results"]] == ["a", "b"]
+    assert [item["object_id"] for item in data["final_results"]] == ["a"]
+    assert data["truncated"] is True
+    assert data["truncate_reason"] == "step_delta>=0.5"

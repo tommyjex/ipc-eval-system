@@ -103,6 +103,37 @@
   - [x] SubTask 19.3: 验证三个结果列表对同一条数据的标记状态保持同步
   - [x] SubTask 19.4: 运行前端类型检查、构建和目标页面 lint
 
+- [x] Task 20: 设置向量检索页面默认配置值
+  - [x] SubTask 20.1: 将低分截断阈值输入框默认值设置为 `0.1`
+  - [x] SubTask 20.2: 将 step delta 阈值输入框默认值设置为 `0.5`
+  - [x] SubTask 20.3: 将 Rerank 模型默认选中项设置为 `base-multilingual-rerank`
+  - [x] SubTask 20.4: 保持用户手动修改和清空阈值输入的交互不变
+
+- [x] Task 21: 验证默认配置值
+  - [x] SubTask 21.1: 验证页面初始状态展示默认阈值 `0.1` 和 `0.5`
+  - [x] SubTask 21.2: 验证页面初始状态默认选中 `base-multilingual-rerank`
+  - [x] SubTask 21.3: 运行前端类型检查、构建和目标页面 lint
+
+- [x] Task 22: 增加站点选择与火山引擎配置
+  - [x] SubTask 22.1: 前端在向量检索评估页大标题下增加“火山引擎”和“BytePlus”两个 Tab
+  - [x] SubTask 22.2: 前端在 Collection、Index 和检索请求中提交当前选中的站点
+  - [x] SubTask 22.3: 后端增加站点参数 schema，支持区分 `volcengine` 和 `byteplus`
+  - [x] SubTask 22.4: 后端为火山引擎配置控制面 host `vikingdb.cn-beijing.volcengineapi.com` 和数据面 host `api-vikingdb.vikingdb.cn-beijing.volces.com`
+  - [x] SubTask 22.5: 后端使用 `.env` 中与 TOS 相同的 AK/SK 作为火山引擎 VikingDB 鉴权信息
+
+- [x] Task 23: 支持火山引擎 Collection、Index 和检索链路
+  - [x] SubTask 23.1: Collection 列表接口按站点选择 BytePlus 或火山引擎控制面配置
+  - [x] SubTask 23.2: Index 列表接口按站点选择 BytePlus 或火山引擎控制面配置
+  - [x] SubTask 23.3: 检索接口按站点选择 BytePlus 或火山引擎数据面配置
+  - [x] SubTask 23.4: 火山引擎站点复用现有文字 query、过滤标签、Rerank、低分截断、step delta 截断、分页和结果标记能力
+  - [x] SubTask 23.5: 切换站点时刷新 Collection/Index，并清理不属于当前站点的旧检索结果
+
+- [x] Task 24: 验证双站点向量检索评估
+  - [x] SubTask 24.1: 更新后端单元测试，覆盖火山引擎站点配置选择和 BytePlus 兼容性
+  - [x] SubTask 24.2: 更新前端类型检查和构建验证
+  - [x] SubTask 24.3: 验证站点 Tab 切换、Collection 查询、Index 查询和检索请求均携带正确站点
+  - [x] SubTask 24.4: 联调验证火山引擎站点可以完成与 BytePlus 一致的 `search -> rerank -> 截断` 评估链路
+
 # Task Dependencies
 - Task 2 depends on Task 1
 - Task 3 depends on Task 2
@@ -121,3 +152,8 @@
 - Task 17 depends on Task 15 and Task 16
 - Task 18 depends on Task 13 and Task 16
 - Task 19 depends on Task 18
+- Task 20 depends on Task 15
+- Task 21 depends on Task 20
+- Task 22 depends on Task 11
+- Task 23 depends on Task 22
+- Task 24 depends on Task 23

@@ -192,8 +192,10 @@ export interface EvaluationDataListResponse {
 }
 
 export type JsonObject = Record<string, unknown>;
+export type VectorRetrievalSite = 'volcengine' | 'byteplus';
 
 export interface VectorRetrievalEvaluateRequest {
+  site?: VectorRetrievalSite;
   dataset_id?: number;
   collection_name?: string;
   index_name?: string;
@@ -247,6 +249,7 @@ export interface VectorRetrievalResultItem {
 }
 
 export interface VectorRetrievalEvaluateResponse {
+  site: VectorRetrievalSite;
   dataset_id: number | null;
   collection_name: string | null;
   index_name: string | null;
@@ -333,9 +336,9 @@ export const evaluationDataApi = {
 };
 
 export const vectorRetrievalApi = {
-  listCollections: (params?: { keyword?: string }) =>
+  listCollections: (params?: { site?: VectorRetrievalSite; keyword?: string }) =>
     api.get<VectorCollection[]>('/vector-retrieval/collections', params),
-  listIndexes: (params: { collection_name: string }) =>
+  listIndexes: (params: { collection_name: string; site?: VectorRetrievalSite }) =>
     api.get<VectorIndex[]>('/vector-retrieval/indexes', params),
   evaluate: (data: VectorRetrievalEvaluateRequest) =>
     api.post<VectorRetrievalEvaluateResponse>('/vector-retrieval/evaluate', data),
