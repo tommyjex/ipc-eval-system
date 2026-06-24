@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     ark_api_key: str
     ark_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
-    ark_model: str = "ep-20260215001006-86n7g"
+    ark_model: str = "doubao-seed-2-1-pro-260628"
     ark_timeout: int = 20
     ark_max_retries: int = 2
 

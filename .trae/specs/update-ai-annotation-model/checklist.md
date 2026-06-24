@@ -1,0 +1,9 @@
+- [x] `settings.ark_model` 的默认值为 `doubao-seed-2-1-pro-260628`
+- [x] `ArkClient.default_model` 从 `settings.ark_model` 初始化
+- [x] `/api/ai-annotations` 未传入 `model` 时，非 GIF 标注调用使用 `doubao-seed-2-1-pro-260628`
+- [x] `/api/ai-annotations` 未传入 `model` 时，GIF 标注调用使用 `doubao-seed-2-1-pro-260628`
+- [x] AI 标注新增 `Annotation` 时，`model_name` 记录实际使用模型
+- [x] AI 标注更新已有 `Annotation` 时，`model_name` 记录实际使用模型
+- [x] 显式传入 `model` 的 AI 标注请求仍优先使用请求模型
+- [x] 后端语法或单元测试检查通过
+- [x] 最小行为检查确认默认模型值为 `doubao-seed-2-1-pro-260628`

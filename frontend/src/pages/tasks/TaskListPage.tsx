@@ -186,6 +186,8 @@ export const TaskListPage: React.FC = () => {
       label: '火山引擎',
       models: [
         { value: 'doubao-seed-2-0-pro-260215', label: 'doubao-seed-2-0-pro-260215' },
+        { value: 'doubao-seed-2-1-pro-260628', label: 'doubao-seed-2-1-pro-260628' },
+        { value: 'doubao-seed-2-1-turbo-260628', label: 'doubao-seed-2-1-turbo-260628' },
         { value: 'doubao-seed-2-0-lite-260215', label: 'doubao-seed-2-0-lite-260215' },
         { value: 'doubao-seed-2-0-lite-260428', label: 'doubao-seed-2-0-lite-260428' },
         { value: 'doubao-seed-2-0-mini-260215', label: 'doubao-seed-2-0-mini-260215' },
