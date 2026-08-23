@@ -199,6 +199,8 @@ export const TaskListPage: React.FC = () => {
       models: [
         { value: 'qwen3-vl-plus', label: 'qwen3-vl-plus' },
         { value: 'qwen3-vl-flash', label: 'qwen3-vl-flash' },
+        { value: 'qwen3.7-plus', label: 'qwen3.7-plus' },
+        { value: 'qwen3.7-flash', label: 'qwen3.7-flash' },
         { value: 'qwen3.6-plus', label: 'qwen3.6-plus' },
         { value: 'qwen3.6-flash', label: 'qwen3.6-flash' },
         { value: 'qwen3.5-plus', label: 'qwen3.5-plus' },

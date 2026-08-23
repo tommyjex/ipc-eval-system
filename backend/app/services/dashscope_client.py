@@ -17,6 +17,8 @@ class DashScopeClient:
     VIDEO_FRAME_LIST_MODELS = {
         "qwen3.6-plus",
         "qwen3.6-flash",
+        "qwen3.7-plus",
+        "qwen3.7-flash",
         "qwen3-vl-plus",
         "qwen3-vl-flash",
     }
